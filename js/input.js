@@ -59,9 +59,9 @@ const LISTS = {
     fields: [
       { key: "name", label: "名前", type: "text", required: true },
       { key: "yearMonth", label: "年月", type: "month", required: true },
-      { key: "estimate", label: "予想額", type: "money", required: true },
-      { key: "target", label: "準備目標額", type: "money", hint: "空欄なら予想額と同じにします。援助の見込みがあれば減らしてください" },
-      { key: "actual", label: "実際の額", type: "money", hint: "イベントが終わってから記入します" },
+      { key: "estimate", label: "総額（予想）", type: "money", required: true, hint: "援助してもらう分も含めた、かかる費用の全体です" },
+      { key: "target", label: "自分で払う額", type: "money", hint: "総額から援助の見込みを引いた額です。この額が資産の計算で引かれ、準備の目標になります。空欄なら総額と同じにします" },
+      { key: "actual", label: "実際に自分で払った額", type: "money", hint: "イベントが終わってから記入します。記入すると、計算ではこの額を使います" },
       MEMO,
     ],
   },
@@ -325,7 +325,8 @@ function renderBasic() {
 // 一覧の1件を、カードに表示する文にする
 function describeItem(type, item) {
   if (type === "events") {
-    let text = item.yearMonth + "　" + item.name + "　予想 " + formatMoney(item.estimate);
+    let text = item.yearMonth + "　" + item.name + "　自分で払う " + formatMoney(item.target);
+    if (item.target !== item.estimate) text += "（総額 " + formatMoney(item.estimate) + "）";
     if (item.actual !== null) text += "　実際 " + formatMoney(item.actual);
     return text;
   }
@@ -424,7 +425,7 @@ function renderForm(type, item) {
       fields.parts.end.error.textContent = "開始年月以降にしてください";
       return;
     }
-    // 準備目標額が空欄なら、予想額と同じにする
+    // 自分で払う額（準備目標額）が空欄なら、総額と同じにする
     if (type === "events" && values.target === null) {
       values.target = values.estimate;
     }

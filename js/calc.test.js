@@ -4,7 +4,7 @@
 // テストに使う金額はすべて架空の値。
 
 import { createEmptyData } from "./storage.js";
-import { simulate, monthlyRate, endYearMonth, ymToIndex, indexToYm } from "./calc.js";
+import { simulate, judgeEvents, monthlyRate, endYearMonth, ymToIndex, indexToYm } from "./calc.js";
 
 // テスト結果をためておく一覧。{ name: テスト名, ok: 成功したか, detail: 失敗の内容 }
 export const results = [];
@@ -119,15 +119,22 @@ test("臨時収入は期間内の指定した月にだけ入る", () => {
   same(monthOf(months, "2030-01").income, 0, "期間が終わった後の1月");
 });
 
-test("イベントの月に予想額が引かれる", () => {
+test("イベントの月に「自分で払う額」が引かれる（総額ではない）", () => {
   const data = baseData();
-  data.events.push({ name: "テスト", yearMonth: "2029-12", estimate: 30, target: 30, actual: null });
+  // 総額80のうち、援助を見込んで自分で払うのは30
+  data.events.push({ name: "テスト", yearMonth: "2029-12", estimate: 80, target: 30, actual: null });
   const months = simulate(data, "2029-11");
   near(monthOf(months, "2029-11").cash, 100, "イベント前");
   near(monthOf(months, "2029-12").cash, 70, "イベント月");
 });
 
-test("実際の額があれば予想額の代わりに使う（0円も有効）", () => {
+test("自分で払う額が空欄なら総額を使う", () => {
+  const data = baseData();
+  data.events.push({ name: "テスト", yearMonth: "2029-12", estimate: 80, target: null, actual: null });
+  same(monthOf(simulate(data, "2029-11"), "2029-12").eventCost, 80, "イベント額");
+});
+
+test("実際に払った額があれば、それを使う（0円も有効）", () => {
   const data = baseData();
   data.events.push({ name: "A", yearMonth: "2029-12", estimate: 30, target: 30, actual: 45 });
   data.events.push({ name: "B", yearMonth: "2030-01", estimate: 30, target: 30, actual: 0 });
@@ -155,4 +162,79 @@ test("現金がマイナスの月に警告の印が付く", () => {
   same(monthOf(months, "2029-11").cashShort, false, "イベント前");
   same(monthOf(months, "2029-12").cashShort, true, "イベント月");
   near(monthOf(months, "2029-12").cash, -30, "マイナスのまま計算を続ける");
+});
+
+// ---- 準備目標の判定 ----------------------------------------------------
+// baseData は 現金100・投資50。収入や生活費がなければ、イベントまで残高は変わらない。
+
+// イベントを1件だけ入れて判定し、その結果を返す
+function judgeOne(data, event, thisMonth = "2029-10") {
+  data.events.push({ name: "テスト", estimate: event.target, actual: null, ...event });
+  return judgeEvents(data, thisMonth)[0];
+}
+
+test("判定：現金だけで届き、最低額も残れば「達成」", () => {
+  const data = baseData();
+  data.basic.minCash = 20;
+  const j = judgeOne(data, { yearMonth: "2029-12", target: 80 }); // イベント後の現金は20
+  same(j.status, "ok", "判定（最低額ちょうどは達成）");
+  near(j.cashBefore, 100, "前月末の現金");
+  near(j.cashAfter, 20, "イベント後の現金");
+  same(j.shortfall, 0, "不足額");
+});
+
+test("判定：目標額ちょうどの現金でも「達成」", () => {
+  same(judgeOne(baseData(), { yearMonth: "2029-12", target: 100 }).status, "ok", "判定");
+});
+
+test("判定：現金では届かないが投資込みなら届けば「注意」", () => {
+  const j = judgeOne(baseData(), { yearMonth: "2029-12", target: 120 });
+  same(j.status, "caution", "判定");
+  near(j.shortfall, 20, "不足額（120 − 100）");
+  same(j.monthsLeft, 2, "今月(10月)からイベント前月(11月)までの月数");
+  near(j.monthlyNeed, 10, "毎月あといくら（20 ÷ 2）");
+});
+
+test("判定：現金で届いても、イベント後に最低額を下回れば「注意」", () => {
+  const data = baseData();
+  data.basic.minCash = 30;
+  const j = judgeOne(data, { yearMonth: "2029-12", target: 80 }); // イベント後の現金は20
+  same(j.status, "caution", "判定");
+  same(j.shortfall, 0, "不足額");
+  near(j.minCashGap, 10, "最低額に届かない分");
+});
+
+test("判定：投資込みでも届かなければ「不足」", () => {
+  const j = judgeOne(baseData(), { yearMonth: "2029-12", target: 160 });
+  same(j.status, "short", "判定");
+  near(j.shortfall, 60, "不足額（160 − 100）");
+});
+
+test("判定：イベントが今月なら、起点の残高で判定し、月割りはしない", () => {
+  const j = judgeOne(baseData(), { yearMonth: "2029-10", target: 120 });
+  same(j.status, "caution", "判定");
+  near(j.cashBefore, 100, "起点の現金");
+  same(j.monthsLeft, 0, "月数");
+  same(j.monthlyNeed, null, "毎月あといくら");
+});
+
+test("判定：それまでの収入と、前のイベントの支払いを反映する", () => {
+  const data = baseData();
+  data.incomes.push({ start: "2029-01", end: "", monthly: 10, bonuses: [] });
+  data.events.push({ name: "先", yearMonth: "2029-11", estimate: 90, target: 90, actual: null });
+  data.events.push({ name: "後", yearMonth: "2030-01", estimate: 50, target: 50, actual: null });
+  const [first, second] = judgeEvents(data, "2029-10");
+  near(first.cashBefore, 110, "先のイベント前月末（100＋10）");
+  near(second.cashBefore, 40, "後のイベント前月末（100＋30−90）");
+  same(second.status, "caution", "後のイベントの判定");
+});
+
+test("判定：実際の額が記入済み・起点より前は「済み」、30歳より後は対象外", () => {
+  const data = baseData();
+  data.events.push({ name: "記入済み", yearMonth: "2029-12", estimate: 500, target: 500, actual: 10 });
+  data.events.push({ name: "過去", yearMonth: "2029-01", estimate: 500, target: 500, actual: null });
+  data.events.push({ name: "30歳より後", yearMonth: "2031-01", estimate: 500, target: 500, actual: null });
+  const result = judgeEvents(data, "2029-10");
+  same(result.map((j) => j.event.name).join(), "過去,記入済み,30歳より後", "年月の順に並ぶ");
+  same(result.map((j) => j.status).join(), "done,done,none", "判定");
 });

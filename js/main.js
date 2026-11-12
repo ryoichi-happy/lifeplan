@@ -1,9 +1,9 @@
 // main.js
 // メイン画面（見通し）の表示。
-// 保存データを calc.js で計算し、年表と資産グラフを1枚の SVG の図として描く。
-// 年表とグラフは同じ横軸を使うので、イベントの真下にその月の資産が来る。
+// 保存データを calc.js で計算し、上から「要約」「年表と資産グラフ」「表」を表示する。
+// 年表とグラフは1枚の SVG の図で、同じ横軸を使うので、イベントの真下にその月の資産が来る。
 
-import { simulate, ymToIndex } from "./calc.js";
+import { simulate, judgeEvents, ymToIndex } from "./calc.js";
 import { el, svgEl, formatMoney, formatYearMonth } from "./util.js";
 
 // ---- 図の大きさ（単位は px） ---------------------------------------------
@@ -16,6 +16,7 @@ const ROW_HEIGHT = 24; // 年表の1段の高さ
 const PLOT_HEIGHT = 200; // グラフ部分の高さ
 const PLOT_PAD = 10; // グラフの上下の余白
 const Y_AXIS_WIDTH = 46; // 左に固定する縦軸の幅
+const LABEL_GAP = 13; // 年表の印の中心から、名前までの距離
 
 // ---- 目盛りの計算 --------------------------------------------------------
 
@@ -48,6 +49,114 @@ function textWidth(text) {
   let width = 0;
   for (const char of text) width += char.charCodeAt(0) < 0x2000 ? 7 : 12;
   return width;
+}
+
+// ---- 判定の表示 ----------------------------------------------------------
+// 判定ごとの名前。色だけに頼らないよう、形と記号も変える（色と形は style.css で決めている）
+const STATUS = {
+  ok: { label: "達成", icon: "✓" },
+  caution: { label: "注意", icon: "!" },
+  short: { label: "不足", icon: "×" },
+  done: { label: "済み", icon: "" },
+};
+
+// 「✓ 達成」のような判定の表示（HTML）を作る
+function statusBadge(status) {
+  return el("span", { class: "status" }, [
+    el("span", { class: "status-icon status-" + status, text: STATUS[status].icon }),
+    el("span", { text: STATUS[status].label }),
+  ]);
+}
+
+// 年表に置く印（SVG）を作る。達成＝丸に✓、注意＝三角に!、不足＝四角に×、済み＝小さな丸
+function statusMark(status, cx, cy) {
+  if (status === "ok") {
+    return [
+      svgEl("circle", { class: "mark mark-ok", cx, cy, r: 8 }),
+      svgEl("polyline", { class: "mark-glyph-light", points: [cx - 4, cy, cx - 1, cy + 3, cx + 4, cy - 3].join(" ") }),
+    ];
+  }
+  if (status === "caution") {
+    return [
+      svgEl("polygon", { class: "mark mark-caution", points: [cx, cy - 9, cx + 9.5, cy + 7, cx - 9.5, cy + 7].join(" ") }),
+      svgEl("line", { class: "mark-glyph-dark", x1: cx, x2: cx, y1: cy - 3, y2: cy + 1.5 }),
+      svgEl("circle", { class: "mark-dot-dark", cx, cy: cy + 4.5, r: 1.1 }),
+    ];
+  }
+  if (status === "short") {
+    return [
+      svgEl("rect", { class: "mark mark-short", x: cx - 7.5, y: cy - 7.5, width: 15, height: 15, rx: 3 }),
+      svgEl("line", { class: "mark-glyph-light", x1: cx - 3.5, x2: cx + 3.5, y1: cy - 3.5, y2: cy + 3.5 }),
+      svgEl("line", { class: "mark-glyph-light", x1: cx - 3.5, x2: cx + 3.5, y1: cy + 3.5, y2: cy - 3.5 }),
+    ];
+  }
+  return [svgEl("circle", { class: "mark mark-done", cx, cy, r: 5 })];
+}
+
+// 残りの月数を「あと1年2か月」の形にする
+function formatMonthsLeft(count) {
+  if (count <= 0) return "今月";
+  const years = Math.floor(count / 12);
+  const rest = count % 12;
+  return "あと" + (years ? years + "年" : "") + (rest ? rest + "か月" : "");
+}
+
+// 判定の結果から、「毎月あといくら必要か」の説明文を作る
+function needText(judgement) {
+  if (judgement.status === "ok") return "今のペースで間に合います";
+  if (judgement.shortfall > 0) {
+    if (judgement.monthlyNeed === null) {
+      return "不足 " + formatMoney(judgement.shortfall) + "（今月のイベントです）";
+    }
+    return "月 " + formatMoney(judgement.monthlyNeed) + "（不足 " + formatMoney(judgement.shortfall) + " ÷ " + judgement.monthsLeft + "か月）";
+  }
+  return "現金は足りますが、イベント後に最低限残したい額を " + formatMoney(judgement.minCashGap) + " 下回ります";
+}
+
+// 画面上部の要約を作る
+function buildSummary(months, judgements) {
+  const last = months[months.length - 1];
+  const items = [
+    el("div", { class: "summary-item" }, [
+      el("p", { class: "summary-label", text: "30歳時点の予想資産" }),
+      el("p", { class: "summary-hero", text: formatMoney(last.cash + last.investment) }),
+      el("p", { class: "summary-sub", text: "現金 " + formatMoney(last.cash) + " ／ 投資 " + formatMoney(last.investment) }),
+    ]),
+  ];
+
+  // これから来るイベント（判定の対象になっているもの）
+  const upcoming = judgements.filter((j) => j.status === "ok" || j.status === "caution" || j.status === "short");
+  if (upcoming.length === 0) {
+    items.push(el("div", { class: "summary-item" }, [
+      el("p", { class: "summary-label", text: "次のイベント" }),
+      el("p", { class: "summary-sub", text: "予定されているイベントはありません。" }),
+    ]));
+    return el("div", { class: "summary" }, items);
+  }
+
+  const next = upcoming[0];
+  const others = upcoming.slice(1);
+  const cautionCount = others.filter((j) => j.status === "caution").length;
+  const shortCount = others.filter((j) => j.status === "short").length;
+  const otherText = [cautionCount ? "注意" + cautionCount + "件" : "", shortCount ? "不足" + shortCount + "件" : ""].filter(Boolean).join("・");
+
+  items.push(
+    el("div", { class: "summary-item" }, [
+      el("p", { class: "summary-label", text: "次のイベント" }),
+      el("p", { class: "summary-main" }, [
+        el("span", { text: next.event.name + "　" + formatMonthsLeft(next.monthsLeft) }),
+        statusBadge(next.status),
+      ]),
+      el("p", { class: "summary-sub", text: formatYearMonth(next.event.yearMonth) + "・自分で払う額 " + formatMoney(next.target) }),
+      otherText ? el("p", { class: "summary-sub", text: "ほかに " + otherText }) : null,
+    ]),
+    el("div", { class: "summary-item" }, [
+      el("p", { class: "summary-label", text: "毎月あといくら必要か" }),
+      el("p", { class: "summary-main", text: needText(next) }),
+      ...next.reasons.map((reason) => el("p", { class: "summary-sub", text: reason })),
+    ]),
+  );
+  return el("div", { class: "summary" }, items);
 }
 
 // 長い名前は途中で切って「…」を付ける
@@ -90,19 +199,23 @@ export function renderMain(data, thisMonth) {
   const width = PAD_LEFT + (months.length - 1) * MONTH_WIDTH + PAD_RIGHT;
   const x = (i) => PAD_LEFT + i * MONTH_WIDTH; // i 番目の月の横位置
 
+  // イベントごとの判定（達成／注意／不足）。イベントから判定を引けるようにしておく
+  const judgements = judgeEvents(data, thisMonth);
+  const judgementOf = new Map(judgements.map((j) => [j.event, j]));
+
   const rowEnds = []; // 各段で、すでに使われている右端
   const placed = events.map((event) => {
     const i = ymToIndex(event.yearMonth) - startIndex;
     const label = shorten(event.name);
     const labelWidth = textWidth(label);
     // ふつうは印の右に名前を書く。右にはみ出すときは左に書く
-    const onLeft = x(i) + 10 + labelWidth > width;
-    const left = onLeft ? x(i) - 10 - labelWidth : x(i) - 6;
-    const right = onLeft ? x(i) + 6 : x(i) + 10 + labelWidth;
+    const onLeft = x(i) + LABEL_GAP + labelWidth > width;
+    const left = onLeft ? x(i) - LABEL_GAP - labelWidth : x(i) - 10;
+    const right = onLeft ? x(i) + 10 : x(i) + LABEL_GAP + labelWidth;
     let row = rowEnds.findIndex((end) => left > end + 4);
     if (row === -1) row = rowEnds.length;
     rowEnds[row] = right;
-    return { event, i, label, onLeft, row };
+    return { event, i, label, onLeft, row, judgement: judgementOf.get(event) };
   });
   const timelineHeight = Math.max(rowEnds.length, 1) * ROW_HEIGHT + 8;
 
@@ -180,14 +293,29 @@ export function renderMain(data, thisMonth) {
   const cross = svgEl("g", { visibility: "hidden" }, [crossLine, crossCash, crossInvest]);
   chart.append(cross);
 
-  // 年表のイベント（印と名前）。判定の色とアイコンはステップ5で付ける
+  // 年表のイベント（判定の印と名前）
   for (const item of placed) {
     const cy = HEADER_HEIGHT + 4 + item.row * ROW_HEIGHT + ROW_HEIGHT / 2;
-    chart.append(svgEl("g", { class: "event" }, [
-      svgEl("circle", { class: "event-dot", cx: x(item.i), cy, r: 5 }),
+    const labelWidth = textWidth(item.label);
+    // 印と名前をまとめて覆う、透明なタップ用の四角。
+    // 印は1か月分の幅より大きいので、これがないと隣の月が選ばれてしまうことがある
+    const hitLeft = item.onLeft ? x(item.i) - LABEL_GAP - labelWidth : x(item.i) - 12;
+    const hitWidth = 12 + LABEL_GAP + labelWidth;
+    // 印か名前をタップしたら、位置から月を探すのではなく、そのイベントの月を直接選ぶ
+    const selectEvent = (event) => {
+      event.stopPropagation(); // グラフ全体のタップ処理（位置から月を選ぶ）を動かさない
+      select(item.i);
+    };
+    chart.append(svgEl("g", {
+      class: "event",
+      onclick: selectEvent,
+      onpointermove: (event) => { if (event.pointerType === "mouse") selectEvent(event); },
+    }, [
+      svgEl("rect", { class: "event-hit", x: hitLeft, y: cy - ROW_HEIGHT / 2, width: hitWidth, height: ROW_HEIGHT }),
+      ...statusMark(item.judgement.status, x(item.i), cy),
       svgEl("text", {
         class: "event-label", y: cy + 4, text: item.label,
-        x: item.onLeft ? x(item.i) - 10 : x(item.i) + 10,
+        x: item.onLeft ? x(item.i) - LABEL_GAP : x(item.i) + LABEL_GAP,
         "text-anchor": item.onLeft ? "end" : "start",
       }),
     ]));
@@ -228,12 +356,21 @@ export function renderMain(data, thisMonth) {
     for (const item of placed) {
       if (item.i !== i) continue;
       const event = item.event;
-      const hasActual = event.actual !== null && event.actual !== undefined && event.actual !== "";
+      const judgement = item.judgement;
+      const isDone = judgement.status === "done";
       rows.push(el("p", { class: "readout-event" }, [
-        el("span", { class: "swatch swatch-event" }),
-        el("span", { text: event.name + "　" + (hasActual ? "実際 " + formatMoney(event.actual) : "予想 " + formatMoney(event.estimate)) + "（準備目標 " + formatMoney(event.target) + "）" }),
+        el("span", { class: "readout-event-name", text: event.name }),
+        statusBadge(judgement.status),
       ]));
-      if (event.memo) rows.push(el("p", { class: "readout-memo", text: event.memo }));
+      rows.push(el("p", { class: "readout-memo", text:
+        (isDone ? "実際に自分で払った額 " + formatMoney(event.actual) : "自分で払う額 " + formatMoney(judgement.target)) +
+        "（総額の予想 " + formatMoney(event.estimate) + "）" }));
+      if (!isDone) {
+        rows.push(el("p", { class: "readout-memo", text: "前月末の見込み：現金 " + formatMoney(judgement.cashBefore) + "・投資 " + formatMoney(judgement.investmentBefore) }));
+        for (const reason of judgement.reasons) rows.push(el("p", { class: "readout-memo", text: reason }));
+        if (judgement.status !== "ok") rows.push(el("p", { class: "readout-memo", text: needText(judgement) }));
+      }
+      if (event.memo) rows.push(el("p", { class: "readout-memo", text: "メモ：" + event.memo }));
     }
     readout.replaceChildren(...rows);
   }
@@ -274,6 +411,11 @@ export function renderMain(data, thisMonth) {
     shortMonths.length ? el("span", {}, [el("span", { class: "swatch swatch-short" }), el("span", { text: "⚠ 現金のマイナス" })]) : null,
     el("span", { class: "legend-unit", text: "単位：万円" }),
   ]);
+  // 年表の印の説明（イベントがあるときだけ出す）
+  const statusLegend = placed.length === 0 ? null : el("div", { class: "legend" }, [
+    el("span", { text: "イベントの準備：" }),
+    statusBadge("ok"), statusBadge("caution"), statusBadge("short"),
+  ]);
 
   // ---- 表（図が見づらいとき用。各年の最後の月の値） ----
   const tableRows = [];
@@ -297,8 +439,10 @@ export function renderMain(data, thisMonth) {
 
   root.replaceChildren(
     ...[warning].filter(Boolean),
+    buildSummary(months, judgements),
     el("div", { class: "viz-root chart-card" }, [
       legend,
+      statusLegend,
       el("div", { class: "chart-row" }, [
         yAxis,
         el("div", { class: "chart-scroll" }, [chart]),

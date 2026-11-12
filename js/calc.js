@@ -72,9 +72,21 @@ function sumBonuses(incomes, index) {
   return total;
 }
 
-// イベントで出ていく額。実際の額が記入されていればそれを、なければ予想額を使う。
+// イベントの「自分で払う額」（準備目標額）。空欄なら総額（予想額）と同じとみなす。
+export function eventTarget(event) {
+  return Number(isBlank(event.target) ? event.estimate : event.target) || 0;
+}
+
+// イベントが終わっている（実際に自分で払った額が記入されている）か
+export function isEventDone(event) {
+  return !isBlank(event.actual);
+}
+
+// イベントで現金から出ていく額。
+// 実際に払った額が記入されていればそれを、なければ「自分で払う額」を使う。
+// （援助してもらう分は自分の現金から出ないので、総額ではなく自分で払う額を引く）
 export function eventCost(event) {
-  return Number(isBlank(event.actual) ? event.estimate : event.actual) || 0;
+  return isEventDone(event) ? Number(event.actual) || 0 : eventTarget(event);
 }
 
 // 最新の実績（年月がいちばん新しいもの）を返す。なければ null。
@@ -88,6 +100,25 @@ export function latestRecord(records) {
   return latest;
 }
 
+// 計算の起点（最初に計算する月と、その直前の残高）を決める。
+// ・実績がある → 最新の実績を「その月の月末の残高」とみなし、翌月から計算
+// ・実績がない → 基本情報の残高を元に、今月分から計算
+export function startPoint(data, thisMonth) {
+  const record = latestRecord(data.records);
+  if (record) {
+    return {
+      index: ymToIndex(record.yearMonth) + 1,
+      cash: Number(record.cash) || 0,
+      investment: Number(record.investment) || 0,
+    };
+  }
+  return {
+    index: ymToIndex(thisMonth),
+    cash: Number(data.basic.cash) || 0,
+    investment: Number(data.basic.investment) || 0,
+  };
+}
+
 // ---- メインの計算 -----------------------------------------------------
 // 起点の月から30歳の月まで、1か月ずつ資産を計算する。
 //   data      : 保存データ（storage.js の形）
@@ -97,20 +128,10 @@ export function simulate(data, thisMonth) {
   const basic = data.basic;
   if (isBlank(basic.birthYearMonth)) return [];
 
-  // 起点を決める
-  // ・実績がある → 最新の実績を「その月の月末の残高」とみなし、翌月から計算
-  // ・実績がない → 基本情報の残高を元に、今月分から計算
-  const record = latestRecord(data.records);
-  let startIndex, cash, investment;
-  if (record) {
-    startIndex = ymToIndex(record.yearMonth) + 1;
-    cash = Number(record.cash) || 0;
-    investment = Number(record.investment) || 0;
-  } else {
-    startIndex = ymToIndex(thisMonth);
-    cash = Number(basic.cash) || 0;
-    investment = Number(basic.investment) || 0;
-  }
+  const start = startPoint(data, thisMonth);
+  const startIndex = start.index;
+  let cash = start.cash;
+  let investment = start.investment;
 
   const endIndex = ymToIndex(endYearMonth(basic.birthYearMonth));
   const rate = monthlyRate(Number(basic.annualReturnPct) || 0);
@@ -147,4 +168,72 @@ export function simulate(data, thisMonth) {
     });
   }
   return months;
+}
+
+// ---- 準備目標の判定 ---------------------------------------------------
+// 小数の計算のごく小さな誤差で「ちょうど同じ額」が届かない扱いにならないための幅
+const EPSILON = 1e-9;
+
+// イベントごとに、準備が間に合うかを判定する。年月の早い順に並べた一覧を返す。
+// 1件分の中身:
+//   event       : 元のイベント
+//   status      : "ok" 達成 / "caution" 注意 / "short" 不足 /
+//                 "done" 済み（実際の額が記入済み、または起点より前）/ "none" 30歳より後で対象外
+//   reasons     : 注意・不足の理由（文章の一覧）
+//   target      : 自分で払う額（準備目標額）
+//   cashBefore, investmentBefore : イベント前月末の現金と投資
+//   cashAfter   : イベントの月の月末の現金
+//   shortfall   : 不足額 ＝ 準備目標額 − イベント前月末の現金（足りていれば 0）
+//   minCashGap  : イベント後の現金が「最低限残しておきたい額」に届かない分（届いていれば 0）
+//   monthsLeft  : 今月からイベント前月までの月数（イベントが今月なら 0）
+//   monthlyNeed : 毎月あといくら必要か ＝ 不足額 ÷ monthsLeft（今月のイベントは null）
+export function judgeEvents(data, thisMonth) {
+  const months = simulate(data, thisMonth);
+  const start = startPoint(data, thisMonth);
+  const thisIndex = ymToIndex(thisMonth);
+  const minCash = Number(data.basic.minCash) || 0;
+
+  const sorted = [...data.events].sort((a, b) => a.yearMonth.localeCompare(b.yearMonth));
+  return sorted.map((event) => {
+    const index = ymToIndex(event.yearMonth);
+    const i = index - start.index; // 計算結果の一覧の中で、イベントの月が何番目か
+    const result = { event, status: "done", reasons: [], target: eventTarget(event) };
+
+    if (isEventDone(event) || i < 0) return result;
+    if (i >= months.length) return { ...result, status: "none" };
+
+    // イベント前月末の残高。イベントが起点の月にあるときは、起点の残高を使う
+    const before = i === 0 ? start : months[i - 1];
+    const cashBefore = before.cash;
+    const investmentBefore = before.investment;
+    const cashAfter = months[i].cash;
+
+    const reachByCash = cashBefore >= result.target - EPSILON;
+    const reachWithInvestment = cashBefore + investmentBefore >= result.target - EPSILON;
+    const keepsMinCash = cashAfter >= minCash - EPSILON;
+
+    if (!reachWithInvestment) {
+      result.status = "short";
+      result.reasons.push("投資を合わせても、自分で払う額に届きません");
+    } else if (reachByCash && keepsMinCash) {
+      result.status = "ok";
+    } else {
+      result.status = "caution";
+      if (!reachByCash) result.reasons.push("現金だけでは届きませんが、投資を合わせれば届きます");
+      if (!keepsMinCash) result.reasons.push("イベント後の現金が、最低限残しておきたい額を下回ります");
+    }
+
+    const shortfall = reachByCash ? 0 : result.target - cashBefore;
+    const monthsLeft = Math.max(index - thisIndex, 0);
+    return {
+      ...result,
+      cashBefore,
+      investmentBefore,
+      cashAfter,
+      shortfall,
+      minCashGap: keepsMinCash ? 0 : minCash - cashAfter,
+      monthsLeft,
+      monthlyNeed: monthsLeft > 0 ? shortfall / monthsLeft : null,
+    };
+  });
 }
