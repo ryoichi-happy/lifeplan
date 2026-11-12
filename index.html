@@ -2,22 +2,45 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <!-- スマホの画面幅に合わせて表示するための設定 -->
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- スマホの画面幅に合わせて表示するための設定
+       （viewport-fit=cover は、iPhone の画面下の丸い部分まで使うための指定） -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>人生設計</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <h1>人生設計</h1>
+  <!-- 保存データを読み込めなかったときのメッセージ欄 -->
+  <p id="load-error" class="error-box" hidden></p>
 
-  <!-- ここから下はステップ1の動作確認用。ステップ3で入力画面に置き換える -->
-  <p>保存・読み込みの動作確認</p>
-  <div class="buttons">
-    <button id="save-test" type="button">テスト保存</button>
-    <button id="clear" type="button">削除</button>
-  </div>
-  <p id="message"></p>
-  <pre id="output"></pre>
+  <main>
+    <!-- 画面1：見通し（ステップ4で作る） -->
+    <section id="screen-main" class="screen">
+      <h1>見通し</h1>
+      <p class="note">準備中です。まずは「入力」からデータを登録してください。</p>
+    </section>
+
+    <!-- 画面2：入力 -->
+    <section id="screen-input" class="screen" hidden>
+      <h1>入力</h1>
+      <!-- タブ（中のボタンは input.js が作る） -->
+      <div id="tabs" class="tabs"></div>
+      <!-- 選んだタブの中身（input.js が作る） -->
+      <div id="tab-content"></div>
+    </section>
+
+    <!-- 画面3：データ管理（ステップ7で作る） -->
+    <section id="screen-data" class="screen" hidden>
+      <h1>データ管理</h1>
+      <p class="note">準備中です。</p>
+    </section>
+  </main>
+
+  <!-- 画面の下に固定する、画面切り替えのボタン -->
+  <nav class="bottom-nav">
+    <button type="button" data-screen="main" class="active">見通し</button>
+    <button type="button" data-screen="input">入力</button>
+    <button type="button" data-screen="data">データ</button>
+  </nav>
 
   <!-- type="module" は、JavaScript のファイルを分割して読み込めるようにする指定 -->
   <script type="module" src="js/app.js"></script>

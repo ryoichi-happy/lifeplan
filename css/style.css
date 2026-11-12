@@ -1,31 +1,268 @@
-/* style.css : 見た目の設定。今は最小限で、画面を作るステップで足していく */
+/* style.css : 見た目の設定。スマホの縦画面（幅375px前後）を基準にしている */
+
+/* 幅や高さの計算に、余白と枠線を含める（レイアウトが崩れにくくなる定番の設定） */
+* {
+  box-sizing: border-box;
+}
+
+/* hidden を付けた要素は必ず隠す */
+[hidden] {
+  display: none !important;
+}
 
 body {
   margin: 0;
-  padding: 16px;
   font-family: sans-serif;
   line-height: 1.6;
+  color: #222;
+  background: #f5f6f8;
+}
+
+/* 画面の中身。下の固定ボタンに隠れないよう、下に余白を取る。
+   env(safe-area-inset-bottom) は iPhone の画面下の丸い部分の高さ */
+main {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 16px 16px calc(80px + env(safe-area-inset-bottom));
 }
 
 h1 {
   font-size: 1.25rem;
-  margin: 0 0 8px;
+  margin: 0 0 12px;
 }
 
-.buttons {
-  display: flex;
-  gap: 8px;
+h2 {
+  font-size: 1.1rem;
+  margin: 0 0 12px;
+}
+
+.note {
+  color: #666;
+}
+
+/* ---- ボタン・入力欄の共通設定 ---- */
+
+/* 文字を16px以上にしておくと、iPhone で入力欄をタップしたときに画面が勝手に拡大されない */
+button,
+input,
+select {
+  font: inherit;
+  font-size: 1rem;
+  color: inherit;
 }
 
 button {
-  font-size: 1rem;
+  min-height: 44px; /* 指で押しやすい高さ */
   padding: 8px 16px;
+  border: 1px solid #c5c9d0;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
 }
 
-/* 保存データの表示欄。長い行は折り返さず、欄の中だけ横スクロールさせる */
+button.primary {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+button.danger {
+  border-color: #c62828;
+  color: #c62828;
+}
+
+button.small {
+  min-height: 40px;
+  padding: 4px 12px;
+  font-size: 0.9rem;
+}
+
+input,
+select {
+  min-height: 44px;
+  padding: 8px;
+  border: 1px solid #c5c9d0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+/* ---- 画面下の切り替えボタン ---- */
+
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: #fff;
+  border-top: 1px solid #d9dce2;
+}
+
+.bottom-nav button {
+  flex: 1; /* 3つのボタンで幅を等分する */
+  min-height: 56px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: #666;
+}
+
+.bottom-nav button.active {
+  color: #2563eb;
+  font-weight: bold;
+}
+
+/* ---- 入力画面のタブ ---- */
+
+/* 幅が足りないときは、タブの列だけ横スクロールさせる */
+.tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  margin: 0 -16px 16px;
+  padding: 0 16px;
+  border-bottom: 1px solid #d9dce2;
+}
+
+.tabs button {
+  flex: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: #666;
+  white-space: nowrap;
+}
+
+.tabs button.active {
+  border-bottom-color: #2563eb;
+  color: #2563eb;
+  font-weight: bold;
+}
+
+/* ---- 入力フォーム ---- */
+
+.field {
+  display: block;
+  margin-bottom: 16px;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.9rem;
+  font-weight: bold;
+}
+
+.field input {
+  width: 100%;
+}
+
+.field-hint {
+  display: block;
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.field-error {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  color: #c62828;
+}
+
+.field-error:empty {
+  display: none;
+}
+
+/* 臨時収入の1行（月・額・消すボタンを横に並べる） */
+.bonus-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.bonus-row input {
+  flex: 1;
+  min-width: 0; /* 狭い画面で入力欄がはみ出さないようにする */
+}
+
+.form-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* 削除ボタンは押し間違えにくいよう、右端に離して置く */
+.form-buttons .danger {
+  margin-left: auto;
+}
+
+/* ---- 一覧のカード ---- */
+
+.card {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 12px;
+  text-align: left;
+}
+
+.card-main,
+.card-sub,
+.card-warning {
+  display: block;
+}
+
+.card-sub {
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.card-warning {
+  font-size: 0.85rem;
+  color: #9a6700;
+}
+
+button.add {
+  width: 100%;
+  margin-top: 8px;
+}
+
+/* ---- メッセージ ---- */
+
+.message {
+  margin: 12px 0;
+  color: #1a7f37;
+}
+
+.message:empty {
+  display: none;
+}
+
+.warning-box {
+  margin: 0 0 16px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fff8c5;
+  color: #6b4e00;
+  font-size: 0.9rem;
+}
+
+.error-box {
+  margin: 12px 16px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #ffebe9;
+  color: #c62828;
+}
+
+/* ---- テストページ（test.html）用 ---- */
+
 pre {
   overflow-x: auto;
   padding: 8px;
-  background: #f3f3f3;
+  background: #eee;
   font-size: 0.8rem;
 }

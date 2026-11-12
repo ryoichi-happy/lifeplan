@@ -1,50 +1,40 @@
 // app.js
-// 画面を動かすコード。
-// 今はステップ1の動作確認用の仮の画面で、ステップ3で入力画面に置き換える。
+// アプリ全体の入口。保存データを読み込み、画面（見通し／入力／データ）を切り替える。
 
-import { STORAGE_KEY, loadData, saveData, clearData, createEmptyData, newId } from "./storage.js";
+import { loadData } from "./storage.js";
+import { initInput, confirmLeaveInput } from "./input.js";
 
-const output = document.getElementById("output");
-const message = document.getElementById("message");
+const navButtons = document.querySelectorAll(".bottom-nav button");
+let currentScreen = "main";
 
-// 保存されているデータを読み込んで、画面にそのまま表示する
-function show() {
-  try {
-    const data = loadData();
-    output.textContent = JSON.stringify(data, null, 2);
-    message.textContent = "キー「" + STORAGE_KEY + "」から読み込みました";
-  } catch (error) {
-    output.textContent = "";
-    message.textContent = error.message;
+// 指定した画面だけを表示し、下のボタンの選択状態も合わせる
+function showScreen(name) {
+  for (const screen of document.querySelectorAll(".screen")) {
+    screen.hidden = screen.id !== "screen-" + name;
   }
+  for (const button of navButtons) {
+    button.classList.toggle("active", button.dataset.screen === name);
+  }
+  currentScreen = name;
+  window.scrollTo(0, 0);
 }
 
-// 「テスト保存」: ダミーの値（個人のデータではない）を入れて保存する
-document.getElementById("save-test").addEventListener("click", () => {
-  const data = createEmptyData();
-  data.basic.birthYearMonth = "2000-01";
-  data.basic.cash = 12.3;
-  data.events.push({
-    id: newId(),
-    name: "テストイベント",
-    yearMonth: "2028-04",
-    estimate: 50,
-    target: 50,
-    actual: null,
-    memo: "",
+for (const button of navButtons) {
+  button.addEventListener("click", () => {
+    const name = button.dataset.screen;
+    if (name === currentScreen) return;
+    // 入力画面から離れるとき、保存していない変更があれば確認する
+    if (currentScreen === "input" && !confirmLeaveInput()) return;
+    showScreen(name);
   });
-  try {
-    saveData(data);
-    show();
-  } catch (error) {
-    message.textContent = error.message;
-  }
-});
+}
 
-// 「削除」: 保存データを消して空の状態に戻す
-document.getElementById("clear").addEventListener("click", () => {
-  clearData();
-  show();
-});
-
-show();
+// 保存データを読み込んで、入力画面を準備する
+try {
+  initInput(loadData());
+} catch (error) {
+  // 読み込めなかったときは、データを上書きしてしまわないよう入力画面を作らない
+  const box = document.getElementById("load-error");
+  box.textContent = error.message;
+  box.hidden = false;
+}
