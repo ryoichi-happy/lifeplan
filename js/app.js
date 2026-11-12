@@ -54,3 +54,17 @@ try {
   initData(null, error.message);
   showScreen("data");
 }
+
+// ---- PWA（ホーム画面に追加してアプリのように使う）のための準備 ----
+
+// サービスワーカー（sw.js）を登録する。電波がないときでもアプリを開けるようになる。
+// 対応していないブラウザや、登録に失敗したときは、何もせずふつうのページとして動く。
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+
+// ブラウザに「このアプリの保存データを勝手に消さないで」と頼む。
+// 必ず聞き入れられるとは限らないので、バックアップ（エクスポート）は引き続き必要。
+if (navigator.storage && navigator.storage.persist) {
+  navigator.storage.persist().catch(() => {});
+}

@@ -24,9 +24,27 @@ function todayForFileName() {
   return now.getFullYear() + "-" + two(now.getMonth() + 1) + "-" + two(now.getDate());
 }
 
-// 文字列を、指定した名前のファイルとして保存（ダウンロード）する。
-// 一時的なリンクを作って、それをクリックしたことにする、という定番のやり方。
-function downloadText(fileName, text, mimeType) {
+// 文字列を、指定した名前のファイルとして保存する。
+// 保存できたら true、利用者が取りやめたら false を返す。
+async function downloadText(fileName, text, mimeType) {
+  // iPhone でホーム画面から開いたとき（navigator.standalone が true）は、
+  // ふつうのダウンロードが動かないことがあるので、共有メニューを開いて
+  // 「"ファイル"に保存」を選んでもらう。
+  if (navigator.standalone === true && navigator.canShare) {
+    const file = new File([text], fileName, { type: mimeType });
+    if (navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file] });
+        return true;
+      } catch (error) {
+        // 共有メニューを閉じて取りやめた場合
+        if (error.name === "AbortError") return false;
+        // それ以外の失敗は、下のふつうのダウンロードを試す
+      }
+    }
+  }
+
+  // ふつうのダウンロード：一時的なリンクを作って、それをクリックしたことにする定番のやり方
   const blob = new Blob([text], { type: mimeType }); // Blob＝ファイルの中身にあたるデータ
   const url = URL.createObjectURL(blob);
   const link = el("a", { href: url, download: fileName });
@@ -35,6 +53,7 @@ function downloadText(fileName, text, mimeType) {
   link.remove();
   // 保存が始まるのを少し待ってから、一時的な URL を片付ける
   setTimeout(() => URL.revokeObjectURL(url), 10000);
+  return true;
 }
 
 // インポートするデータの内容を、確認用の短い文にする
@@ -95,7 +114,7 @@ function buildExport() {
     statusNode,
     el("button", {
       type: "button", class: "primary", text: "ファイルに保存する", disabled: data ? null : "",
-      onclick: () => {
+      onclick: async () => {
         // 先に「エクスポートした日時」を記録してから、その内容をファイルにする
         const before = data.lastExportedAt;
         data.lastExportedAt = new Date().toISOString();
@@ -107,7 +126,15 @@ function buildExport() {
           message.textContent = error.message;
           return;
         }
-        downloadText("lifeplan-backup-" + todayForFileName() + ".json", exportText(data), "application/json");
+        const saved = await downloadText("lifeplan-backup-" + todayForFileName() + ".json", exportText(data), "application/json");
+        if (!saved) {
+          // 取りやめたときは、エクスポートした記録を元に戻す
+          data.lastExportedAt = before;
+          saveData(data);
+          message.className = "message";
+          message.textContent = "保存を取りやめました。";
+          return;
+        }
         statusNode.textContent = "最後のエクスポート：" + formatDate(new Date(data.lastExportedAt)) + "（今日）";
         message.className = "message";
         message.textContent = "ファイルを保存しました。個人の金額が入っているので、置き場所に注意してください。";

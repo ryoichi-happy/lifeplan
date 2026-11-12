@@ -6,6 +6,22 @@
        （viewport-fit=cover は、iPhone の画面下の丸い部分まで使うための指定） -->
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>人生設計</title>
+
+  <!-- ここから：ホーム画面に追加してアプリのように使う（PWA）ための設定 -->
+  <!-- アプリの名前やアイコンを書いた設定ファイル -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <!-- 画面上部（時計や電池の表示のあたり）の色 -->
+  <meta name="theme-color" content="#f5f6f8">
+  <!-- ホーム画面から開いたとき、アドレスバーなしで表示する（下の1行は iPhone 用の古い書き方で、念のため両方書く） -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <!-- iPhone のホーム画面に出る名前とアイコン -->
+  <meta name="apple-mobile-web-app-title" content="人生設計">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <!-- ブラウザのタブに出る小さなアイコン -->
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <!-- ここまで -->
+
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
