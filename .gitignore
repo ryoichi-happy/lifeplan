@@ -1,0 +1,3 @@
+# エクスポートしたバックアップには個人の金額が入るので、Git に入れない
+lifeplan-backup-*.json
+lifeplan-broken-*.txt

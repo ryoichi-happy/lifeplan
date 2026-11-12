@@ -4,6 +4,7 @@
 // 年表とグラフは1枚の SVG の図で、同じ横軸を使うので、イベントの真下にその月の資産が来る。
 
 import { simulate, judgeEvents, recordGaps, missingRecordMonth, ymToIndex, indexToYm } from "./calc.js";
+import { hasAnyInput, daysSinceExport } from "./storage.js";
 import { el, svgEl, formatMoney, formatYearMonth } from "./util.js";
 
 // ---- 図の大きさ（単位は px） ---------------------------------------------
@@ -17,6 +18,7 @@ const PLOT_HEIGHT = 200; // グラフ部分の高さ
 const PLOT_PAD = 10; // グラフの上下の余白
 const Y_AXIS_WIDTH = 46; // 左に固定する縦軸の幅
 const LABEL_GAP = 13; // 年表の印の中心から、名前までの距離
+const BACKUP_REMIND_DAYS = 30; // 最後のエクスポートからこの日数がたったら、バックアップを促す
 const BOUNDARY_HEIGHT = 16; // 「実績｜見込み」と書く帯の高さ（実績があるときだけ使う）
 
 // ---- 目盛りの計算 --------------------------------------------------------
@@ -212,14 +214,25 @@ function shorten(text, max = 12) {
 export function renderMain(data, thisMonth) {
   const root = document.getElementById("main-content");
 
+  // ---- バックアップ（エクスポート）を促す案内 ----
+  // ・データを入力済みなのに、一度もエクスポートしていない
+  // ・最後のエクスポートから30日以上たっている
+  const notices = [];
+  const exportDays = daysSinceExport(data);
+  if (exportDays === null && hasAnyInput(data)) {
+    notices.push(el("p", { class: "notice-box", text: "まだバックアップ（エクスポート）をしていません。「データ」からファイルに保存できます。" }));
+  } else if (exportDays !== null && exportDays >= BACKUP_REMIND_DAYS) {
+    notices.push(el("p", { class: "notice-box", text: "最後のバックアップ（エクスポート）から" + exportDays + "日たっています。「データ」からファイルに保存できます。" }));
+  }
+
   if (!data.basic.birthYearMonth) {
-    root.replaceChildren(el("p", { class: "note", text: "まず下の「入力」から、基本情報（生まれ年月と今の残高）を登録してください。" }));
+    root.replaceChildren(...notices, el("p", { class: "note", text: "まず下の「入力」から、基本情報（生まれ年月と今の残高）を登録してください。" }));
     return;
   }
   // これから先の見込み（最新の実績、なければ今の残高から計算したもの）
   const forecast = simulate(data, thisMonth);
   if (forecast.length === 0) {
-    root.replaceChildren(el("p", { class: "note", text: "30歳の月を過ぎているため、表示する期間がありません。" }));
+    root.replaceChildren(...notices, el("p", { class: "note", text: "30歳の月を過ぎているため、表示する期間がありません。" }));
     return;
   }
   // 実績のある期間。図には「実績 → 見込み」の順につなげて描く
@@ -528,13 +541,16 @@ export function renderMain(data, thisMonth) {
 
   // ---- 実績の入力忘れの案内 ----
   const missing = missingRecordMonth(data, thisMonth);
-  const notice = missing === null ? null : el("p", {
-    class: "notice-box",
-    text: formatYearMonth(missing) + "の実績がまだ入力されていません。「入力」→「実績」から登録できます。",
-  });
+  if (missing !== null) {
+    notices.push(el("p", {
+      class: "notice-box",
+      text: formatYearMonth(missing) + "の実績がまだ入力されていません。「入力」→「実績」から登録できます。",
+    }));
+  }
 
   root.replaceChildren(
-    ...[notice, warning].filter(Boolean),
+    ...notices,
+    ...[warning].filter(Boolean),
     summary,
     el("div", { class: "viz-root chart-card" }, [
       legend,

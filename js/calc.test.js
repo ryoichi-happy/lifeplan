@@ -3,39 +3,12 @@
 // test.html を開くと実行され、結果が ○／× で表示される。
 // テストに使う金額はすべて架空の値。
 
+import { test, near, same } from "./testlib.js";
 import { createEmptyData } from "./storage.js";
 import {
   simulate, judgeEvents, recordGaps, missingRecordMonth,
   monthlyRate, endYearMonth, ymToIndex, indexToYm,
 } from "./calc.js";
-
-// テスト結果をためておく一覧。{ name: テスト名, ok: 成功したか, detail: 失敗の内容 }
-export const results = [];
-
-// テストを1つ実行する。途中でエラーが出たら失敗として記録する。
-function test(name, fn) {
-  try {
-    fn();
-    results.push({ name, ok: true, detail: "" });
-  } catch (error) {
-    results.push({ name, ok: false, detail: error.message });
-  }
-}
-
-// 2つの数がほぼ等しいことを確かめる。
-// 小数の計算にはごく小さな誤差が出るので、完全一致ではなく差が十分小さいかで判定する。
-function near(actual, expected, label) {
-  if (Math.abs(actual - expected) > 1e-9) {
-    throw new Error(label + ": 期待 " + expected + " / 実際 " + actual);
-  }
-}
-
-// 2つの値が同じであることを確かめる。
-function same(actual, expected, label) {
-  if (actual !== expected) {
-    throw new Error(label + ": 期待 " + expected + " / 実際 " + actual);
-  }
-}
 
 // テスト用のデータを作る。2000年1月生まれ → 30歳の月は2030年1月。
 function baseData() {

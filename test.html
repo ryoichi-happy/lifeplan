@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>計算ロジックのテスト</title>
+  <title>テスト</title>
   <link rel="stylesheet" href="css/style.css">
   <style>
     li { margin-bottom: 4px; }
@@ -12,13 +12,16 @@
   </style>
 </head>
 <body>
-  <h1>計算ロジックのテスト</h1>
+  <h1>テスト</h1>
   <p id="summary">実行中…（この表示のままなら、コードの読み込みに失敗しています）</p>
   <ul id="list"></ul>
 
   <script type="module">
     // テストを実行し、結果を1件ずつ ○／× で表示する
-    import { results } from "./js/calc.test.js";
+    // テストのファイルを読み込むと、その中のテストが実行され、結果が results にたまる
+    import "./js/calc.test.js";
+    import "./js/storage.test.js";
+    import { results } from "./js/testlib.js";
 
     const list = document.getElementById("list");
     for (const result of results) {

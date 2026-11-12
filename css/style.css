@@ -230,6 +230,93 @@ button.add {
   margin-top: 8px;
 }
 
+/* ---- データ管理画面 ---- */
+
+/* 1つの機能をまとめる白い枠 */
+.panel {
+  margin-bottom: 12px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.panel h2 {
+  margin-bottom: 4px;
+}
+
+.panel p {
+  margin: 0 0 12px;
+}
+
+.panel .message:empty {
+  display: none;
+}
+
+.panel .message {
+  margin: 12px 0 0;
+}
+
+/* 「ファイルを選ぶ」：本物の入力欄は見えなくして、ラベルをボタンの見た目にする */
+.file-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid #c5c9d0;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+}
+
+/* キーボードで選んだときに、どこを選んでいるか分かるよう枠を出す */
+.file-button:focus-within {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+/* インポートする内容の確認 */
+.preview {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #c5c9d0;
+  border-radius: 8px;
+}
+
+.preview p {
+  margin: 0 0 4px;
+}
+
+.preview-title {
+  font-weight: bold;
+  overflow-wrap: anywhere; /* 長いファイル名がはみ出さないよう、途中で折り返す */
+}
+
+.preview .preview-warning {
+  margin: 8px 0;
+  color: #6b4e00;
+}
+
+.undo-import {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #e1e0d9;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* ---- メッセージ ---- */
 
 .message {

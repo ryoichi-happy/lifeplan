@@ -5,6 +5,7 @@ import { loadData } from "./storage.js";
 import { currentYearMonth } from "./calc.js";
 import { initInput, confirmLeaveInput } from "./input.js";
 import { renderMain } from "./main.js";
+import { initData, refreshData } from "./data.js";
 
 const navButtons = document.querySelectorAll(".bottom-nav button");
 let currentScreen = "main";
@@ -21,6 +22,7 @@ function showScreen(name) {
   currentScreen = name;
   // 見通し画面は、開くたびに最新のデータで描き直す
   if (name === "main" && data) renderMain(data, currentYearMonth());
+  if (name === "data") refreshData();
   window.scrollTo(0, 0);
 }
 
@@ -38,10 +40,17 @@ for (const button of navButtons) {
 try {
   data = loadData();
   initInput(data);
+  initData(data);
   showScreen("main");
 } catch (error) {
-  // 読み込めなかったときは、データを上書きしてしまわないよう入力画面を作らない
+  // 読み込めなかったときは、データを上書きしてしまわないよう入力画面を作らない。
+  // データ管理画面だけは使えるようにして、バックアップから戻せるようにする
   const box = document.getElementById("load-error");
-  box.textContent = error.message;
+  box.textContent = error.message + "　「データ」画面から、バックアップの読み込みなどができます。";
   box.hidden = false;
+  const note = "保存データを読み込めないため、表示できません。";
+  document.getElementById("main-content").textContent = note;
+  document.getElementById("tab-content").textContent = note;
+  initData(null, error.message);
+  showScreen("data");
 }
