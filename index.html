@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <!-- スマホの画面幅に合わせて表示するための設定 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>人生設計</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <h1>人生設計</h1>
+
+  <!-- ここから下はステップ1の動作確認用。ステップ3で入力画面に置き換える -->
+  <p>保存・読み込みの動作確認</p>
+  <div class="buttons">
+    <button id="save-test" type="button">テスト保存</button>
+    <button id="clear" type="button">削除</button>
+  </div>
+  <p id="message"></p>
+  <pre id="output"></pre>
+
+  <!-- type="module" は、JavaScript のファイルを分割して読み込めるようにする指定 -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
