@@ -5,6 +5,7 @@
 // 入力欄を増やしたいときは、定義に1行足せばよい。
 
 import { saveData, newId } from "./storage.js";
+import { currentYearMonth, ymToIndex, indexToYm } from "./calc.js";
 import { el, formatMoney } from "./util.js";
 
 // ---- 欄の定義 ----------------------------------------------------------
@@ -65,15 +66,40 @@ const LISTS = {
       MEMO,
     ],
   },
+  records: {
+    title: "実績",
+    isPeriod: false,
+    newestFirst: true, // 一覧を新しい順に並べる
+    fields: [
+      { key: "yearMonth", label: "年月", type: "month", required: true, hint: "その月の月末の残高として扱います。計算は翌月から始まります" },
+      { key: "cash", label: "現金残高", type: "money", required: true },
+      { key: "investment", label: "投資評価額", type: "money", required: true },
+      MEMO,
+    ],
+    // 新しく追加するときに、最初から入れておく値（年月は先月）
+    defaults: () => ({ yearMonth: indexToYm(ymToIndex(currentYearMonth()) - 1) }),
+    // 保存前の追加チェック。問題があれば { 欄の名前: エラーの文 } を返す
+    validate: (values, self) => {
+      if (values.yearMonth > currentYearMonth()) {
+        return { yearMonth: "今月より先の年月は入力できません" };
+      }
+      const duplicate = data.records.some((other) => other.yearMonth === values.yearMonth && other.id !== (self ? self.id : null));
+      if (duplicate) {
+        return { yearMonth: "この月の実績はすでにあります。一覧から選んで編集してください" };
+      }
+      return {};
+    },
+  },
 };
 
-// タブの並び（「実績」はステップ6で追加する）
+// タブの並び
 const TABS = [
   { id: "basic", label: "基本情報" },
   { id: "incomes", label: "収入" },
   { id: "expenses", label: "生活費" },
   { id: "savings", label: "積立" },
   { id: "events", label: "イベント" },
+  { id: "records", label: "実績" },
 ];
 
 const DISCARD_MESSAGE = "保存していない変更があります。破棄してよいですか？";
@@ -293,6 +319,7 @@ function renderBasic() {
   const fields = buildFields(BASIC_FIELDS, data.basic);
   const message = el("p", { class: "message" });
   const form = el("form", { novalidate: "" }, [
+    el("p", { class: "note", text: "「実績」を登録すると、計算は最新の実績の残高から始まり、ここの現金残高と投資評価額は使われなくなります。" }),
     ...fields.nodes,
     el("div", { class: "form-buttons" }, [
       el("button", { type: "submit", class: "primary", text: "保存" }),
@@ -324,6 +351,9 @@ function renderBasic() {
 
 // 一覧の1件を、カードに表示する文にする
 function describeItem(type, item) {
+  if (type === "records") {
+    return item.yearMonth + "　現金 " + formatMoney(item.cash) + "　投資 " + formatMoney(item.investment);
+  }
   if (type === "events") {
     let text = item.yearMonth + "　" + item.name + "　自分で払う " + formatMoney(item.target);
     if (item.target !== item.estimate) text += "（総額 " + formatMoney(item.estimate) + "）";
@@ -342,6 +372,7 @@ function renderList(type, message) {
   // 年月の早い順に並べる（元の一覧は変えず、並べ替えた写しを作る）
   const sortKey = list.isPeriod ? "start" : "yearMonth";
   const items = [...data[type]].sort((a, b) => a[sortKey].localeCompare(b[sortKey]));
+  if (list.newestFirst) items.reverse();
 
   const nodes = [];
   if (message) nodes.push(el("p", { class: "message", text: message }));
@@ -367,7 +398,7 @@ function renderList(type, message) {
 function renderForm(type, item) {
   const list = LISTS[type];
   const isNew = item === null;
-  const fields = buildFields(list.fields, item || {});
+  const fields = buildFields(list.fields, item || (list.defaults ? list.defaults() : {}));
   const warning = el("p", { class: "warning-box", hidden: "" });
   const message = el("p", { class: "message" });
 
@@ -424,6 +455,12 @@ function renderForm(type, item) {
     if (list.isPeriod && values.end && values.end < values.start) {
       fields.parts.end.error.textContent = "開始年月以降にしてください";
       return;
+    }
+    // 種類ごとの追加チェック（実績の「同じ月は1件だけ」「未来の月は不可」など）
+    if (list.validate) {
+      const errors = Object.entries(list.validate(values, item));
+      for (const [key, text] of errors) fields.parts[key].error.textContent = text;
+      if (errors.length > 0) return;
     }
     // 自分で払う額（準備目標額）が空欄なら、総額と同じにする
     if (type === "events" && values.target === null) {

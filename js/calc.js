@@ -125,19 +125,20 @@ export function startPoint(data, thisMonth) {
 //   thisMonth : 今月（"2026-11" の形）。テストで日付を固定できるよう、外から渡す
 // 戻り値は1か月ごとの結果の一覧（配列）。生まれ年月が未入力なら空の一覧を返す。
 export function simulate(data, thisMonth) {
-  const basic = data.basic;
-  if (isBlank(basic.birthYearMonth)) return [];
+  if (isBlank(data.basic.birthYearMonth)) return [];
+  const endIndex = ymToIndex(endYearMonth(data.basic.birthYearMonth));
+  return simulateFrom(data, startPoint(data, thisMonth), endIndex);
+}
 
-  const start = startPoint(data, thisMonth);
-  const startIndex = start.index;
+// 指定した起点から、指定した月（通し番号）まで計算する。
+//   start : { index: 最初に計算する月, cash: その直前の現金, investment: その直前の投資 }
+function simulateFrom(data, start, endIndex) {
+  const rate = monthlyRate(Number(data.basic.annualReturnPct) || 0);
   let cash = start.cash;
   let investment = start.investment;
 
-  const endIndex = ymToIndex(endYearMonth(basic.birthYearMonth));
-  const rate = monthlyRate(Number(basic.annualReturnPct) || 0);
-
   const months = [];
-  for (let index = startIndex; index <= endIndex; index++) {
+  for (let index = start.index; index <= endIndex; index++) {
     const yearMonth = indexToYm(index);
 
     const income = sumMonthly(data.incomes, index) + sumBonuses(data.incomes, index);
@@ -168,6 +169,46 @@ export function simulate(data, thisMonth) {
     });
   }
   return months;
+}
+
+// ---- 実績と見込みのズレ -------------------------------------------------
+// 実績を年月の早い順に並べ、1件ごとに「見込みとのズレ」を付けて返す。
+//   ズレ ＝ 実績 −「1つ前の実績から、今の入力内容で計算した見込み」
+// 最初の1件は比べる相手がないので、ズレは null になる。
+// 1件分の中身:
+//   record : 元の実績
+//   predictedCash, predictedInvestment : 1つ前の実績から計算した見込み
+//   cashGap, investmentGap             : ズレ（プラスなら見込みより多い）
+export function recordGaps(data) {
+  const records = [...(data.records || [])].sort((a, b) => a.yearMonth.localeCompare(b.yearMonth));
+  return records.map((record, n) => {
+    if (n === 0) {
+      return { record, predictedCash: null, predictedInvestment: null, cashGap: null, investmentGap: null };
+    }
+    const previous = records[n - 1];
+    const start = {
+      index: ymToIndex(previous.yearMonth) + 1,
+      cash: Number(previous.cash) || 0,
+      investment: Number(previous.investment) || 0,
+    };
+    const months = simulateFrom(data, start, ymToIndex(record.yearMonth));
+    const predicted = months[months.length - 1];
+    return {
+      record,
+      predictedCash: predicted.cash,
+      predictedInvestment: predicted.investment,
+      cashGap: (Number(record.cash) || 0) - predicted.cash,
+      investmentGap: (Number(record.investment) || 0) - predicted.investment,
+    };
+  });
+}
+
+// 入力を促したほうがよい実績の年月を返す（促さなくてよければ null）。
+// 先月の実績も今月の実績もないとき、先月の年月を返す。
+export function missingRecordMonth(data, thisMonth) {
+  const lastMonth = indexToYm(ymToIndex(thisMonth) - 1);
+  const has = (yearMonth) => (data.records || []).some((record) => record.yearMonth === yearMonth);
+  return has(lastMonth) || has(thisMonth) ? null : lastMonth;
 }
 
 // ---- 準備目標の判定 ---------------------------------------------------

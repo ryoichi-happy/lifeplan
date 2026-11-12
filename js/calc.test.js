@@ -4,7 +4,10 @@
 // テストに使う金額はすべて架空の値。
 
 import { createEmptyData } from "./storage.js";
-import { simulate, judgeEvents, monthlyRate, endYearMonth, ymToIndex, indexToYm } from "./calc.js";
+import {
+  simulate, judgeEvents, recordGaps, missingRecordMonth,
+  monthlyRate, endYearMonth, ymToIndex, indexToYm,
+} from "./calc.js";
 
 // テスト結果をためておく一覧。{ name: テスト名, ok: 成功したか, detail: 失敗の内容 }
 export const results = [];
@@ -237,4 +240,45 @@ test("判定：実際の額が記入済み・起点より前は「済み」、30
   const result = judgeEvents(data, "2029-10");
   same(result.map((j) => j.event.name).join(), "過去,記入済み,30歳より後", "年月の順に並ぶ");
   same(result.map((j) => j.status).join(), "done,done,none", "判定");
+});
+
+// ---- 実績と見込みのズレ --------------------------------------------------
+
+test("ズレ：1つ前の実績から計算した見込みと比べる", () => {
+  const data = baseData();
+  data.incomes.push({ start: "2029-01", end: "", monthly: 20, bonuses: [] });
+  data.expenses.push({ start: "2029-01", end: "", monthly: 12 });
+  data.savings.push({ start: "2029-01", end: "", monthly: 3 });
+  // 毎月の見込みは 現金＋5、投資＋3
+  data.records.push({ yearMonth: "2029-10", cash: 110, investment: 60 }); // わざと順番を入れ替えて登録
+  data.records.push({ yearMonth: "2029-09", cash: 100, investment: 50 });
+  const [first, second] = recordGaps(data);
+  same(first.record.yearMonth, "2029-09", "年月の早い順に並ぶ");
+  same(first.cashGap, null, "最初の1件はズレなし");
+  near(second.predictedCash, 105, "現金の見込み");
+  near(second.predictedInvestment, 53, "投資の見込み");
+  near(second.cashGap, 5, "現金のズレ（110 − 105）");
+  near(second.investmentGap, 7, "投資のズレ（60 − 53）");
+});
+
+test("ズレ：実績が何か月か空いていても、その間を計算して比べる", () => {
+  const data = baseData();
+  data.incomes.push({ start: "2029-01", end: "", monthly: 10, bonuses: [] });
+  data.records.push({ yearMonth: "2029-06", cash: 100, investment: 0 });
+  data.records.push({ yearMonth: "2029-09", cash: 120, investment: 0 });
+  const second = recordGaps(data)[1];
+  near(second.predictedCash, 130, "3か月分の見込み（100＋10×3）");
+  near(second.cashGap, -10, "現金のズレ");
+});
+
+test("入力忘れ：先月も今月も実績がなければ、先月の年月を返す", () => {
+  const data = baseData();
+  same(missingRecordMonth(data, "2029-11"), "2029-10", "実績なし");
+  same(missingRecordMonth(data, "2029-01"), "2028-12", "1月なら前の年の12月");
+  data.records.push({ yearMonth: "2029-09", cash: 1, investment: 1 });
+  same(missingRecordMonth(data, "2029-11"), "2029-10", "古い実績だけ");
+  data.records.push({ yearMonth: "2029-10", cash: 1, investment: 1 });
+  same(missingRecordMonth(data, "2029-11"), null, "先月の実績あり");
+  data.records[1].yearMonth = "2029-11";
+  same(missingRecordMonth(data, "2029-11"), null, "今月の実績あり");
 });

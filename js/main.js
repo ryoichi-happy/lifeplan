@@ -3,7 +3,7 @@
 // 保存データを calc.js で計算し、上から「要約」「年表と資産グラフ」「表」を表示する。
 // 年表とグラフは1枚の SVG の図で、同じ横軸を使うので、イベントの真下にその月の資産が来る。
 
-import { simulate, judgeEvents, ymToIndex } from "./calc.js";
+import { simulate, judgeEvents, recordGaps, missingRecordMonth, ymToIndex, indexToYm } from "./calc.js";
 import { el, svgEl, formatMoney, formatYearMonth } from "./util.js";
 
 // ---- 図の大きさ（単位は px） ---------------------------------------------
@@ -17,6 +17,7 @@ const PLOT_HEIGHT = 200; // グラフ部分の高さ
 const PLOT_PAD = 10; // グラフの上下の余白
 const Y_AXIS_WIDTH = 46; // 左に固定する縦軸の幅
 const LABEL_GAP = 13; // 年表の印の中心から、名前までの距離
+const BOUNDARY_HEIGHT = 16; // 「実績｜見込み」と書く帯の高さ（実績があるときだけ使う）
 
 // ---- 目盛りの計算 --------------------------------------------------------
 
@@ -91,6 +92,47 @@ function statusMark(status, cx, cy) {
     ];
   }
   return [svgEl("circle", { class: "mark mark-done", cx, cy, r: 5 })];
+}
+
+// ズレの金額を「＋3.2万円」「−1.0万円」の形にする
+function formatSigned(value) {
+  const rounded = Math.round(value * 10) / 10;
+  return (rounded < 0 ? "−" : "＋") + Math.abs(rounded).toFixed(1) + "万円";
+}
+
+// ズレの説明文（合計と、現金・投資の内訳）を作る
+function gapText(gap) {
+  return "見込みより " + formatSigned(gap.cashGap + gap.investmentGap) +
+    "（現金 " + formatSigned(gap.cashGap) + " ／ 投資 " + formatSigned(gap.investmentGap) + "）";
+}
+
+// 実績のある期間（最初の実績の月〜最新の実績の月）を、1か月ごとの一覧にする。
+// 実績がない月は、前後の実績をまっすぐ結んだ線の上の値で補う（グラフの線をつなぐため）。
+//   kind: "record" 実績のある月 / "between" 実績がなく補った月
+function buildPast(gaps) {
+  const past = [];
+  gaps.forEach((gap, n) => {
+    const record = gap.record;
+    const index = ymToIndex(record.yearMonth);
+    const cash = Number(record.cash) || 0;
+    const investment = Number(record.investment) || 0;
+    if (n > 0) {
+      const previous = past[past.length - 1];
+      const previousIndex = ymToIndex(previous.yearMonth);
+      for (let k = previousIndex + 1; k < index; k++) {
+        const ratio = (k - previousIndex) / (index - previousIndex);
+        past.push({
+          kind: "between",
+          yearMonth: indexToYm(k),
+          cash: previous.cash + (cash - previous.cash) * ratio,
+          investment: previous.investment + (investment - previous.investment) * ratio,
+          cashShort: false,
+        });
+      }
+    }
+    past.push({ kind: "record", yearMonth: record.yearMonth, cash, investment, cashShort: cash < 0, gap });
+  });
+  return past;
 }
 
 // 残りの月数を「あと1年2か月」の形にする
@@ -174,11 +216,16 @@ export function renderMain(data, thisMonth) {
     root.replaceChildren(el("p", { class: "note", text: "まず下の「入力」から、基本情報（生まれ年月と今の残高）を登録してください。" }));
     return;
   }
-  const months = simulate(data, thisMonth);
-  if (months.length === 0) {
+  // これから先の見込み（最新の実績、なければ今の残高から計算したもの）
+  const forecast = simulate(data, thisMonth);
+  if (forecast.length === 0) {
     root.replaceChildren(el("p", { class: "note", text: "30歳の月を過ぎているため、表示する期間がありません。" }));
     return;
   }
+  // 実績のある期間。図には「実績 → 見込み」の順につなげて描く
+  const gaps = recordGaps(data);
+  const past = buildPast(gaps);
+  const months = past.concat(forecast);
 
   const birthIndex = ymToIndex(data.basic.birthYearMonth);
   const startIndex = ymToIndex(months[0].yearMonth);
@@ -219,7 +266,8 @@ export function renderMain(data, thisMonth) {
   });
   const timelineHeight = Math.max(rowEnds.length, 1) * ROW_HEIGHT + 8;
 
-  const plotTop = HEADER_HEIGHT + timelineHeight + PLOT_PAD;
+  const boundaryTop = HEADER_HEIGHT + timelineHeight; // 「実績｜見込み」の帯の上端
+  const plotTop = boundaryTop + (past.length ? BOUNDARY_HEIGHT : 0) + PLOT_PAD;
   const height = plotTop + PLOT_HEIGHT + PLOT_PAD;
 
   // 縦軸の範囲と目盛り
@@ -286,6 +334,24 @@ export function renderMain(data, thisMonth) {
     chart.append(svgEl("text", { class: "series-label", x: labelX, y: y((cashTop[last] + total[last]) / 2) + 4, text: "投資" }));
   }
 
+  // 実績と見込みの境目（最新の実績の位置）に縦線を引き、左右に「実績」「見込み」と書く
+  if (past.length) {
+    const boundaryX = x(past.length - 1);
+    chart.append(svgEl("line", { class: "boundary", x1: boundaryX, x2: boundaryX, y1: boundaryTop, y2: height - PLOT_PAD }));
+    if (boundaryX >= 34) { // 左が狭くて書けないときは「実績」を省く
+      chart.append(svgEl("text", { class: "boundary-label", x: boundaryX - 4, y: boundaryTop + 12, "text-anchor": "end", text: "実績" }));
+    }
+    chart.append(svgEl("text", { class: "boundary-label", x: boundaryX + 4, y: boundaryTop + 12, text: "見込み" }));
+  }
+  // 実績のある月に点を打つ（現金と、現金＋投資の2つ）
+  months.forEach((month, i) => {
+    if (month.kind !== "record") return;
+    chart.append(
+      svgEl("circle", { class: "dot-invest", cx: x(i), cy: y(total[i]), r: 4 }),
+      svgEl("circle", { class: "dot-cash", cx: x(i), cy: y(month.cash), r: 4 }),
+    );
+  });
+
   // 選んだ月を示す縦線と点（最初は隠しておく）
   const crossLine = svgEl("line", { class: "crosshair", y1: HEADER_HEIGHT - 4, y2: height - PLOT_PAD });
   const crossCash = svgEl("circle", { class: "dot-cash", r: 4 });
@@ -344,12 +410,22 @@ export function renderMain(data, thisMonth) {
     crossInvest.setAttribute("cy", y(total[i]));
 
     const age = Math.floor((startIndex + i - birthIndex) / 12);
+    const kindText = month.kind === "record" ? "実績" : month.kind === "between" ? "実績なし" : "見込み";
     const rows = [
-      el("p", { class: "readout-title", text: formatYearMonth(month.yearMonth) + "（" + age + "歳）の月末" }),
+      el("p", { class: "readout-title", text: formatYearMonth(month.yearMonth) + "（" + age + "歳）の月末・" + kindText }),
       valueRow("swatch-cash", "現金", month.cash),
       valueRow("swatch-invest", "投資", month.investment),
       valueRow(null, "合計", month.cash + month.investment),
     ];
+    if (month.kind === "between") {
+      rows.push(el("p", { class: "readout-memo", text: "この月は実績がないため、前後の実績をまっすぐ結んだ値を表示しています。" }));
+    }
+    if (month.kind === "record") {
+      rows.push(el("p", { class: "readout-memo", text: month.gap.cashGap === null
+        ? "最初の実績なので、見込みとのズレはありません。"
+        : "1つ前の実績から計算した" + gapText(month.gap) }));
+      if (month.gap.record.memo) rows.push(el("p", { class: "readout-memo", text: "メモ：" + month.gap.record.memo }));
+    }
     if (month.cashShort) {
       rows.push(el("p", { class: "readout-warning", text: "⚠ 現金がマイナスです" }));
     }
@@ -409,6 +485,7 @@ export function renderMain(data, thisMonth) {
     el("span", {}, [el("span", { class: "swatch swatch-cash" }), el("span", { text: "現金" })]),
     el("span", {}, [el("span", { class: "swatch swatch-invest" }), el("span", { text: "投資" })]),
     shortMonths.length ? el("span", {}, [el("span", { class: "swatch swatch-short" }), el("span", { text: "⚠ 現金のマイナス" })]) : null,
+    past.length ? el("span", {}, [el("span", { class: "swatch swatch-record" }), el("span", { text: "実績のある月" })]) : null,
     el("span", { class: "legend-unit", text: "単位：万円" }),
   ]);
   // 年表の印の説明（イベントがあるときだけ出す）
@@ -421,7 +498,7 @@ export function renderMain(data, thisMonth) {
   const tableRows = [];
   months.forEach((month, i) => {
     const isYearEnd = month.yearMonth.endsWith("-12") || i === months.length - 1;
-    if (!isYearEnd) return;
+    if (!isYearEnd || month.kind === "between") return; // 実績がなく補った月は、表には出さない
     tableRows.push(el("tr", {}, [
       el("td", { text: formatYearMonth(month.yearMonth) }),
       el("td", { class: "num", text: month.cash.toFixed(1) }),
@@ -437,9 +514,28 @@ export function renderMain(data, thisMonth) {
     ]),
   ]);
 
+  // ---- 要約（最新の実績があれば、見込みとのズレを4つ目の項目として足す） ----
+  const summary = buildSummary(months, judgements);
+  if (gaps.length) {
+    const latest = gaps[gaps.length - 1];
+    summary.append(el("div", { class: "summary-item" }, [
+      el("p", { class: "summary-label", text: "最新の実績（" + formatYearMonth(latest.record.yearMonth) + "）" }),
+      latest.cashGap === null
+        ? el("p", { class: "summary-sub", text: "見込みとのズレは、実績が2か月分そろうと表示されます。" })
+        : el("p", { class: "summary-main", text: gapText(latest) }),
+    ]));
+  }
+
+  // ---- 実績の入力忘れの案内 ----
+  const missing = missingRecordMonth(data, thisMonth);
+  const notice = missing === null ? null : el("p", {
+    class: "notice-box",
+    text: formatYearMonth(missing) + "の実績がまだ入力されていません。「入力」→「実績」から登録できます。",
+  });
+
   root.replaceChildren(
-    ...[warning].filter(Boolean),
-    buildSummary(months, judgements),
+    ...[notice, warning].filter(Boolean),
+    summary,
     el("div", { class: "viz-root chart-card" }, [
       legend,
       statusLegend,

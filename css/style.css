@@ -241,6 +241,16 @@ button.add {
   display: none;
 }
 
+/* お知らせ（実績の入力忘れなど） */
+.notice-box {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #e3eefc;
+  color: #104281;
+  font-size: 0.9rem;
+}
+
 .warning-box {
   margin: 0 0 16px;
   padding: 8px 12px;
@@ -360,6 +370,7 @@ button.add {
 .swatch-short { background: var(--status-critical); }
 .swatch-event { border-radius: 50%; background: var(--ink-secondary); }
 .swatch-none { background: none; }
+.swatch-record { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-secondary); }
 
 /* 判定の表示（記号の入った小さな印＋文字） */
 .status {
@@ -447,6 +458,10 @@ button.add {
 .crosshair { stroke: var(--ink-muted); stroke-width: 1; }
 .dot-cash { fill: var(--series-cash); stroke: var(--surface); stroke-width: 2; }
 .dot-invest { fill: var(--series-invest); stroke: var(--surface); stroke-width: 2; }
+
+/* 実績と見込みの境目 */
+.boundary { stroke: var(--ink-muted); stroke-width: 1; }
+.boundary-label { fill: var(--ink-muted); }
 
 .event-label { fill: var(--ink); }
 .event { cursor: pointer; }
