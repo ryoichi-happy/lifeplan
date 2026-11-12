@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>計算ロジックのテスト</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    li { margin-bottom: 4px; }
+    .ok { color: #1a7f37; }
+    .ng { color: #c62828; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>計算ロジックのテスト</h1>
+  <p id="summary">実行中…（この表示のままなら、コードの読み込みに失敗しています）</p>
+  <ul id="list"></ul>
+
+  <script type="module">
+    // テストを実行し、結果を1件ずつ ○／× で表示する
+    import { results } from "./js/calc.test.js";
+
+    const list = document.getElementById("list");
+    for (const result of results) {
+      const item = document.createElement("li");
+      item.className = result.ok ? "ok" : "ng";
+      item.textContent = (result.ok ? "○ " : "× ") + result.name +
+        (result.ok ? "" : " … " + result.detail);
+      list.appendChild(item);
+    }
+
+    const failed = results.filter((r) => !r.ok).length;
+    const summary = document.getElementById("summary");
+    summary.className = failed === 0 ? "ok" : "ng";
+    summary.textContent = failed === 0
+      ? "全 " + results.length + " 件 成功"
+      : results.length + " 件中 " + failed + " 件 失敗";
+  </script>
+</body>
+</html>
