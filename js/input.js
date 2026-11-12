@@ -5,6 +5,7 @@
 // 入力欄を増やしたいときは、定義に1行足せばよい。
 
 import { saveData, newId } from "./storage.js";
+import { el, formatMoney } from "./util.js";
 
 // ---- 欄の定義 ----------------------------------------------------------
 // type の種類:  month = 年月 / money = 金額（万円）/ percent = % / text = 文字 / bonuses = 臨時収入
@@ -84,27 +85,6 @@ let currentTab = "basic"; // 今開いているタブ
 let hasUnsaved = null; // 「保存していない変更があるか」を調べる関数（フォームを開いていないときは null）
 
 // ---- 小さな道具 --------------------------------------------------------
-
-// HTML の要素を作る。 el("p", { class: "note", text: "こんにちは" }) のように使う。
-function el(tag, props = {}, children = []) {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(props)) {
-    if (value === undefined || value === null || value === false) continue;
-    if (key === "class") node.className = value;
-    else if (key === "text") node.textContent = value;
-    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
-    else node.setAttribute(key, value);
-  }
-  for (const child of children) {
-    if (child) node.append(child);
-  }
-  return node;
-}
-
-// 金額を「8.0万円」の形にする
-function formatMoney(value) {
-  return Number(value).toFixed(1) + "万円";
-}
 
 // 小数第1位に丸める
 function round1(value) {

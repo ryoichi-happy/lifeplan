@@ -258,6 +258,194 @@ button.add {
   color: #c62828;
 }
 
+/* ---- メイン画面：年表と資産グラフ ---- */
+
+/* グラフで使う色を、役割ごとに名前を付けてまとめておく */
+.viz-root {
+  --series-cash: #2a78d6; /* 現金（青） */
+  --series-invest: #eb6834; /* 投資（オレンジ） */
+  --status-critical: #d03b3b; /* 現金のマイナス（赤） */
+  --ink: #0b0b0b; /* 文字 */
+  --ink-secondary: #52514e; /* 控えめな文字 */
+  --ink-muted: #898781; /* 目盛りの文字 */
+  --grid: #e1e0d9; /* 目盛りの線 */
+  --axis: #c3c2b7; /* 0の線 */
+  --surface: #fff; /* グラフの背景 */
+}
+
+.chart-card {
+  padding: 12px 0 12px 4px;
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 0 12px 8px;
+  font-size: 0.85rem;
+  color: var(--ink-secondary);
+}
+
+.legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-unit {
+  margin-left: auto;
+  color: var(--ink-muted);
+}
+
+/* 色見本の小さな四角 */
+.swatch {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.swatch-cash { background: var(--series-cash); }
+.swatch-invest { background: var(--series-invest); }
+.swatch-short { background: var(--status-critical); }
+.swatch-event { border-radius: 50%; background: var(--ink-secondary); }
+.swatch-none { background: none; }
+
+/* 縦軸（固定）と、横スクロールする図を横に並べる */
+.chart-row {
+  display: flex;
+}
+
+.chart-scroll {
+  flex: 1;
+  min-width: 0; /* これがないと、図の幅のぶん画面全体が横に広がってしまう */
+  overflow-x: auto;
+}
+
+.chart,
+.y-axis {
+  display: block;
+  flex: none;
+}
+
+.chart text,
+.y-axis text {
+  font-size: 12px;
+}
+
+.axis-year { fill: var(--ink-secondary); }
+.axis-age,
+.axis-tick { fill: var(--ink-muted); }
+.axis-tick { font-variant-numeric: tabular-nums; }
+
+.grid { stroke: var(--grid); stroke-width: 1; }
+.baseline { stroke: var(--axis); stroke-width: 1; }
+
+/* 面はうすく、線ははっきり描く */
+.area-cash { fill: var(--series-cash); fill-opacity: 0.22; }
+.area-invest { fill: var(--series-invest); fill-opacity: 0.22; }
+.area-short { fill: var(--status-critical); fill-opacity: 0.45; }
+
+.line-cash,
+.line-invest {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.line-cash { stroke: var(--series-cash); }
+.line-invest { stroke: var(--series-invest); }
+
+.series-label { fill: var(--ink-secondary); }
+
+/* 選んだ月を示す縦線と点（点は白いふちで線と見分けやすくする） */
+.crosshair { stroke: var(--ink-muted); stroke-width: 1; }
+.dot-cash { fill: var(--series-cash); stroke: var(--surface); stroke-width: 2; }
+.dot-invest { fill: var(--series-invest); stroke: var(--surface); stroke-width: 2; }
+
+.event-dot { fill: var(--ink-secondary); stroke: var(--surface); stroke-width: 2; }
+.event-label { fill: var(--ink); }
+
+/* タップした月の数値 */
+.readout {
+  margin: 8px 12px 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--grid);
+  font-size: 0.9rem;
+}
+
+.readout p {
+  margin: 0;
+}
+
+.readout-title {
+  font-weight: bold;
+}
+
+.readout-row,
+.readout-event {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.readout-label {
+  width: 3em;
+  color: var(--ink-secondary);
+}
+
+.readout-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.readout-warning {
+  color: var(--status-critical);
+}
+
+.readout .readout-event {
+  margin-top: 4px;
+}
+
+.readout-memo {
+  padding-left: 18px;
+  color: var(--ink-secondary);
+  font-size: 0.85rem;
+}
+
+/* 表で見る */
+.table-view {
+  margin-top: 12px;
+  font-size: 0.9rem;
+}
+
+.table-view summary {
+  min-height: 44px;
+  padding: 10px 0;
+  cursor: pointer;
+}
+
+.table-view table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.table-view th,
+.table-view td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #e1e0d9;
+  text-align: left;
+}
+
+.table-view th:not(:first-child),
+.table-view .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---- テストページ（test.html）用 ---- */
 
 pre {
