@@ -58,6 +58,24 @@ function sumMonthly(periods, index) {
   return total;
 }
 
+// その月の積立を、お金の出どころごとに合計する。
+//   fromCash : 自分の現金からの積立（投資が増え、現金が減る）
+//   gift     : もらったお金の積立（投資だけが増え、現金は減らない）
+// 年1回の積立は、期間内の「入れる月」にだけ数える。
+function sumSavings(savings, index) {
+  const month = (index % 12) + 1; // 1〜12
+  let fromCash = 0;
+  let gift = 0;
+  for (const saving of savings) {
+    if (!inPeriod(saving, index)) continue;
+    if (saving.frequency === "yearly" && Number(saving.month) !== month) continue;
+    const amount = Number(saving.amount) || 0;
+    if (saving.source === "gift") gift += amount;
+    else fromCash += amount;
+  }
+  return { fromCash, gift };
+}
+
 // その月の臨時収入（ボーナスなど）を合計する。
 // bonuses は [{ month: 6, amount: 30 }, ...] の形で、期間内のその月に毎年入る。
 function sumBonuses(incomes, index) {
@@ -143,7 +161,9 @@ function simulateFrom(data, start, endIndex) {
 
     const income = sumMonthly(data.incomes, index) + sumBonuses(data.incomes, index);
     const expense = sumMonthly(data.expenses, index);
-    const saving = sumMonthly(data.savings, index);
+    const savings = sumSavings(data.savings, index);
+    const saving = savings.fromCash; // 自分の現金からの積立
+    const gift = savings.gift; // もらったお金の積立
     let eventTotal = 0;
     for (const event of data.events) {
       if (event.yearMonth === yearMonth) eventTotal += eventCost(event);
@@ -151,9 +171,9 @@ function simulateFrom(data, start, endIndex) {
 
     // 1. 余り ＝ 手取り（＋臨時収入）− 生活費 − イベント額
     const surplus = income - expense - eventTotal;
-    // 2. 投資 ＝ 前月の投資 ×（1＋月利）＋ 積立額
-    investment = investment * (1 + rate) + saving;
-    // 3. 現金 ＝ 前月の現金 ＋ 余り − 積立額
+    // 2. 投資 ＝ 前月の投資 ×（1＋月利）＋ 自分の現金からの積立 ＋ もらったお金の積立
+    investment = investment * (1 + rate) + saving + gift;
+    // 3. 現金 ＝ 前月の現金 ＋ 余り − 自分の現金からの積立（もらったお金の分は減らない）
     cash = cash + surplus - saving;
 
     months.push({
@@ -161,7 +181,8 @@ function simulateFrom(data, start, endIndex) {
       income,
       expense,
       eventCost: eventTotal,
-      saving,
+      saving, // 自分の現金からの積立
+      gift, // もらったお金の積立
       cash, // 月末の現金
       investment, // 月末の投資
       // 4. 現金がマイナスなら警告の印を付ける（投資の自動取り崩しはしない）

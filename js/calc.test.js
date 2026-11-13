@@ -49,7 +49,7 @@ test("1か月で 現金＋5、投資＋3（収入20・生活費12・積立3）",
   const data = baseData();
   data.incomes.push({ start: "2029-01", end: "", monthly: 20, bonuses: [] });
   data.expenses.push({ start: "2029-01", end: "", monthly: 12 });
-  data.savings.push({ start: "2029-01", end: "", monthly: 3 });
+  data.savings.push({ start: "2029-01", end: "", frequency: "monthly", month: null, amount: 3, source: "cash" });
   const first = simulate(data, "2029-11")[0];
   near(first.cash, 105, "現金");
   near(first.investment, 53, "投資");
@@ -140,6 +140,61 @@ test("現金がマイナスの月に警告の印が付く", () => {
   near(monthOf(months, "2029-12").cash, -30, "マイナスのまま計算を続ける");
 });
 
+// ---- 積立の入れ方（毎月／年1回）と、お金の出どころ --------------------------
+// baseData は 現金100・投資50・利回り0%。
+
+test("積立：もらったお金は、投資だけが増えて現金は減らない", () => {
+  const data = baseData();
+  data.savings.push({ start: "2029-01", end: "", frequency: "monthly", month: null, amount: 3, source: "gift" });
+  const first = simulate(data, "2029-11")[0];
+  near(first.cash, 100, "現金は変わらない");
+  near(first.investment, 53, "投資は増える");
+  same(first.saving, 0, "自分の現金からの積立");
+  same(first.gift, 3, "もらったお金の積立");
+});
+
+test("積立：年1回は、期間内のその月にだけ入る", () => {
+  const data = baseData();
+  // 2028年4月〜2029年12月の期間で、毎年1月に30。期間内の1月は2029年1月だけ
+  data.savings.push({ start: "2028-04", end: "2029-12", frequency: "yearly", month: 1, amount: 30, source: "gift" });
+  const months = simulate(data, "2028-11");
+  same(monthOf(months, "2028-12").gift, 0, "1月以外");
+  same(monthOf(months, "2029-01").gift, 30, "期間内の1月");
+  same(monthOf(months, "2030-01").gift, 0, "期間が終わった後の1月");
+  near(monthOf(months, "2030-01").investment, 80, "投資（50＋30）");
+  near(monthOf(months, "2030-01").cash, 100, "現金は変わらない");
+});
+
+test("積立：年1回・自分の現金からなら、その月に現金が減る", () => {
+  const data = baseData();
+  data.savings.push({ start: "2029-01", end: "", frequency: "yearly", month: 12, amount: 30, source: "cash" });
+  const months = simulate(data, "2029-11");
+  near(monthOf(months, "2029-11").cash, 100, "12月より前の現金");
+  near(monthOf(months, "2029-12").cash, 70, "12月の現金");
+  near(monthOf(months, "2029-12").investment, 80, "12月の投資");
+});
+
+test("積立：毎月の積立と、年1回のもらったお金を合わせて計算する", () => {
+  const data = baseData();
+  data.incomes.push({ start: "2029-01", end: "", monthly: 20, bonuses: [] });
+  data.expenses.push({ start: "2029-01", end: "", monthly: 12 });
+  data.savings.push({ start: "2029-01", end: "", frequency: "monthly", month: null, amount: 3, source: "cash" });
+  data.savings.push({ start: "2029-01", end: "", frequency: "yearly", month: 12, amount: 30, source: "gift" });
+  const months = simulate(data, "2029-11");
+  near(monthOf(months, "2029-12").cash, 110, "現金（100＋5×2）");
+  near(monthOf(months, "2029-12").investment, 86, "投資（50＋3×2＋30）");
+});
+
+test("積立：もらったお金にも、入った翌月から利回りがかかる", () => {
+  const data = baseData();
+  data.basic.investment = 0;
+  data.basic.annualReturnPct = 5;
+  data.savings.push({ start: "2029-01", end: "", frequency: "yearly", month: 1, amount: 30, source: "gift" });
+  const months = simulate(data, "2029-01"); // 2029-01 に30入り、2030-01 にまた30入る
+  near(monthOf(months, "2029-01").investment, 30, "入った月");
+  near(monthOf(months, "2030-01").investment, 30 * 1.05 + 30, "1年後（1年分の利回り＋次の30）");
+});
+
 // ---- 準備目標の判定 ----------------------------------------------------
 // baseData は 現金100・投資50。収入や生活費がなければ、イベントまで残高は変わらない。
 
@@ -221,7 +276,7 @@ test("ズレ：1つ前の実績から計算した見込みと比べる", () => {
   const data = baseData();
   data.incomes.push({ start: "2029-01", end: "", monthly: 20, bonuses: [] });
   data.expenses.push({ start: "2029-01", end: "", monthly: 12 });
-  data.savings.push({ start: "2029-01", end: "", monthly: 3 });
+  data.savings.push({ start: "2029-01", end: "", frequency: "monthly", month: null, amount: 3, source: "cash" });
   // 毎月の見込みは 現金＋5、投資＋3
   data.records.push({ yearMonth: "2029-10", cash: 110, investment: 60 }); // わざと順番を入れ替えて登録
   data.records.push({ yearMonth: "2029-09", cash: 100, investment: 50 });

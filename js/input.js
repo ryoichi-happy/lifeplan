@@ -10,7 +10,9 @@ import { el, formatMoney } from "./util.js";
 
 // ---- 欄の定義 ----------------------------------------------------------
 // type の種類:  month = 年月 / money = 金額（万円）/ percent = % / text = 文字 / bonuses = 臨時収入
+//               select = 選択肢から選ぶ（options に選択肢を並べる。numeric: true なら値を数字として扱う）
 // required: true の欄は必須。それ以外は空欄でもよい。
+// showIf: ほかの欄の値によって出したり隠したりする欄に付ける。隠れているときの値は null になる。
 
 const BASIC_FIELDS = [
   { key: "birthYearMonth", label: "生まれ年月", type: "month", required: true },
@@ -51,8 +53,26 @@ const LISTS = {
     isPeriod: true,
     fields: [
       START, END,
-      { key: "monthly", label: "毎月の積立額", type: "money", required: true },
+      {
+        key: "frequency", label: "入れ方", type: "select",
+        options: [{ value: "monthly", label: "毎月" }, { value: "yearly", label: "年1回" }],
+      },
+      {
+        key: "month", label: "入れる月", type: "select", numeric: true,
+        options: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => ({ value: m, label: m + "月" })),
+        hint: "期間内の毎年この月に入れます",
+        showIf: (valueOf) => valueOf("frequency") === "yearly", // 「年1回」のときだけ出す
+      },
+      { key: "amount", label: "1回の積立額", type: "money", required: true },
+      {
+        key: "source", label: "お金の出どころ", type: "select",
+        options: [{ value: "cash", label: "自分の現金から" }, { value: "gift", label: "もらったお金（現金は減らない）" }],
+        hint: "「もらったお金」を選ぶと、投資だけが増え、自分の現金は減らない計算になります",
+      },
     ],
+    // 重なりの注意は、入れ方と出どころが両方同じもの同士にだけ出す
+    // （毎月の積立と、年1回のもらったお金が重なるのはふつうの使い方なので）
+    overlapGroup: (item) => item.frequency + "/" + item.source,
   },
   events: {
     title: "イベント",
@@ -124,9 +144,13 @@ function periodsOverlap(a, b) {
   return a.start <= (b.end || FOREVER) && b.start <= (a.end || FOREVER);
 }
 
-// 一覧の中で、指定した期間と重なる「ほかの項目」があるか
-function overlapsOthers(items, target, selfId) {
-  return items.some((item) => item.id !== selfId && periodsOverlap(item, target));
+// 一覧の中で、指定した期間と重なる「ほかの項目」があるか。
+// groupOf を渡したときは、同じグループのもの同士だけを比べる。
+function overlapsOthers(items, target, selfId, groupOf) {
+  return items.some((item) =>
+    item.id !== selfId &&
+    (!groupOf || groupOf(item) === groupOf(target)) &&
+    periodsOverlap(item, target));
 }
 
 // ---- 入力欄を作る・読み取る ----------------------------------------------
@@ -218,11 +242,19 @@ function buildFields(fields, values) {
       nodes.push(parts[field.key].wrap);
       continue;
     }
+    const isSelect = field.type === "select";
     const unit = field.type === "money" ? "万円" : field.type === "percent" ? "%" : "";
-    const notes = [unit, field.required ? "" : "任意"].filter(Boolean).join("・");
-    const input = el("input", inputAttributes(field));
+    const notes = [unit, field.required || isSelect ? "" : "任意"].filter(Boolean).join("・");
     const value = values[field.key];
-    input.value = value === null || value === undefined ? "" : String(value);
+    let input;
+    if (isSelect) {
+      // 選択肢から選ぶ欄。値がまだないときは、最初の選択肢を選んでおく
+      input = el("select", {}, field.options.map((option) => el("option", { value: option.value, text: option.label })));
+      input.value = String(value === null || value === undefined ? field.options[0].value : value);
+    } else {
+      input = el("input", inputAttributes(field));
+      input.value = value === null || value === undefined ? "" : String(value);
+    }
     const error = el("p", { class: "field-error" });
     const wrap = el("label", { class: "field" }, [
       el("span", { class: "field-label", text: field.label + (notes ? "（" + notes + "）" : "") }),
@@ -230,15 +262,39 @@ function buildFields(fields, values) {
       field.hint ? el("span", { class: "field-hint", text: field.hint }) : null,
       error,
     ]);
-    parts[field.key] = { input, error, read: () => readInput(field, input.value) };
+    parts[field.key] = {
+      input, error, wrap,
+      read: () => (isSelect
+        ? { value: field.numeric ? Number(input.value) : input.value }
+        : readInput(field, input.value)),
+    };
     nodes.push(wrap);
   }
+
+  // showIf の付いた欄を、ほかの欄の今の値に合わせて出したり隠したりする
+  const valueOf = (key) => parts[key].read().value;
+  const isShown = (field) => !field.showIf || field.showIf(valueOf);
+  const updateVisibility = () => {
+    for (const field of fields) {
+      if (field.showIf) parts[field.key].wrap.hidden = !isShown(field);
+    }
+  };
+  for (const field of fields) {
+    if (field.type === "select") parts[field.key].input.addEventListener("change", updateVisibility);
+  }
+  updateVisibility();
 
   function read() {
     const result = {};
     let ok = true;
     for (const field of fields) {
       const part = parts[field.key];
+      // 隠れている欄は読まず、値を null（設定なし）にする
+      if (!isShown(field)) {
+        part.error.textContent = "";
+        result[field.key] = null;
+        continue;
+      }
       const { value, error } = part.read();
       part.error.textContent = error || "";
       if (error) ok = false;
@@ -360,6 +416,11 @@ function describeItem(type, item) {
     if (item.actual !== null) text += "　実際 " + formatMoney(item.actual);
     return text;
   }
+  if (type === "savings") {
+    return item.start + " 〜 " + (item.end || "30歳") + "　" +
+      (item.frequency === "yearly" ? "年1回（" + item.month + "月）" : "毎月 ") + formatMoney(item.amount) +
+      (item.source === "gift" ? "　もらったお金" : "");
+  }
   let text = item.start + " 〜 " + (item.end || "30歳") + "　月 " + formatMoney(item.monthly);
   for (const bonus of item.bonuses || []) {
     text += "　＋" + bonus.month + "月 " + formatMoney(bonus.amount);
@@ -380,7 +441,7 @@ function renderList(type, message) {
     nodes.push(el("p", { class: "note", text: "まだ登録がありません。" }));
   }
   for (const item of items) {
-    const overlap = list.isPeriod && overlapsOthers(items, item, item.id);
+    const overlap = list.isPeriod && overlapsOthers(items, item, item.id, list.overlapGroup);
     nodes.push(el("button", { type: "button", class: "card", onclick: () => renderForm(type, item) }, [
       el("span", { class: "card-main", text: describeItem(type, item) }),
       item.memo ? el("span", { class: "card-sub", text: item.memo }) : null,
@@ -434,13 +495,20 @@ function renderForm(type, item) {
     const checkOverlap = () => {
       const start = fields.parts.start.read().value;
       const end = fields.parts.end.read().value;
+      // 積立は、入れ方と出どころも合わせて比べる
+      const target = { start, end };
+      if (list.overlapGroup) {
+        target.frequency = fields.parts.frequency.read().value;
+        target.source = fields.parts.source.read().value;
+      }
       // 開始年月が未入力・形式違いのあいだは調べない
       warning.hidden = !start || end === undefined ||
-        !overlapsOthers(data[type], { start, end }, item ? item.id : null);
+        !overlapsOthers(data[type], target, item ? item.id : null, list.overlapGroup);
     };
     warning.textContent = "⚠ " + OVERLAP_MESSAGE;
-    fields.parts.start.input.addEventListener("input", checkOverlap);
-    fields.parts.end.input.addEventListener("input", checkOverlap);
+    // 年月や選択を変えるたびに調べ直す（input は文字の入力、change は選択の切り替えで起きる）
+    form.addEventListener("input", checkOverlap);
+    form.addEventListener("change", checkOverlap);
     checkOverlap();
   }
 

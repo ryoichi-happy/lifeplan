@@ -155,7 +155,8 @@ select {
   font-weight: bold;
 }
 
-.field input {
+.field input,
+.field > select {
   width: 100%;
 }
 

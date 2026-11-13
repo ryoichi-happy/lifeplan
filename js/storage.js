@@ -13,7 +13,7 @@ export const BROKEN_BACKUP_KEY = "lifeplan-app:broken-backup";
 export const BEFORE_IMPORT_KEY = "lifeplan-app:before-import";
 
 // 今のデータ形式のバージョン番号。データの形を変えたら 1 ずつ増やす。
-export const CURRENT_VERSION = 1;
+export const CURRENT_VERSION = 2;
 
 // 空のデータを作る。金額はすべて万円単位の数値、年月は "2026-04" のような文字列。
 export function createEmptyData() {
@@ -29,7 +29,12 @@ export function createEmptyData() {
     },
     incomes: [], // 収入:   { id, start, end, monthly, bonuses: [{ month, amount }], memo }
     expenses: [], // 生活費: { id, start, end, monthly, memo }
-    savings: [], // 積立:   { id, start, end, monthly }
+    // 積立: { id, start, end, frequency, month, amount, source }
+    //   frequency = 入れ方（"monthly" 毎月 / "yearly" 年1回）
+    //   month     = 年1回のときに入れる月（1〜12）。毎月のときは null
+    //   amount    = 1回の積立額
+    //   source    = お金の出どころ（"cash" 自分の現金から / "gift" もらったお金。現金は減らない）
+    savings: [],
     events: [], // イベント: { id, name, yearMonth, estimate, target, actual, memo }
     records: [], // 実績:   { id, yearMonth, cash, investment, memo }
     lastExportedAt: null, // 最後にエクスポートした日時（まだなら null）
@@ -46,6 +51,20 @@ export function newId() {
 // 例）バージョン2を作るとき:
 //   MIGRATIONS[1] = (data) => { data.newField = 0; return data; };
 const MIGRATIONS = {};
+
+// バージョン1 → 2：積立に「入れ方（毎月／年1回）」と「お金の出どころ」を追加した。
+// それまでの積立はすべて「毎月・自分の現金から」だったので、その形に直す。
+// 金額の項目名も monthly（毎月の額）から amount（1回の額）に変えた。
+MIGRATIONS[1] = (data) => {
+  if (Array.isArray(data.savings)) {
+    data.savings = data.savings.map((item) => {
+      if (!isObject(item)) return item; // 形がおかしいものは触らず、後の検査に任せる
+      const { monthly, ...rest } = item;
+      return { ...rest, frequency: "monthly", month: null, amount: monthly, source: "cash" };
+    });
+  }
+  return data;
+};
 
 // データを今のバージョンまで順番に変換する（マイグレーション）。
 export function migrate(data) {
@@ -169,10 +188,11 @@ const YEAR_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/; // "2027-04" の形
 // 一覧ごとの、項目の決まり
 //   ym = 年月 / ymOrBlank = 年月か空 / number = 数字 / numberOrNull = 数字か未記入
 //   text = 空でない文字 / memo = 文字（なくてもよい）/ bonuses = 臨時収入の一覧
+//   frequency = 入れ方 / monthOrNull = 1〜12か未設定 / source = お金の出どころ
 const LIST_RULES = {
   incomes: { label: "収入", fields: { start: "ym", end: "ymOrBlank", monthly: "number", bonuses: "bonuses", memo: "memo" } },
   expenses: { label: "生活費", fields: { start: "ym", end: "ymOrBlank", monthly: "number", memo: "memo" } },
-  savings: { label: "積立", fields: { start: "ym", end: "ymOrBlank", monthly: "number" } },
+  savings: { label: "積立", fields: { start: "ym", end: "ymOrBlank", frequency: "frequency", month: "monthOrNull", amount: "number", source: "source" } },
   events: { label: "イベント", fields: { name: "text", yearMonth: "ym", estimate: "number", target: "number", actual: "numberOrNull", memo: "memo" } },
   records: { label: "実績", fields: { yearMonth: "ym", cash: "number", investment: "number", memo: "memo" } },
 };
@@ -183,6 +203,7 @@ const FIELD_LABELS = {
   name: "名前", yearMonth: "年月", estimate: "総額（予想）", target: "自分で払う額",
   actual: "実際に自分で払った額", cash: "現金残高", investment: "投資評価額",
   birthYearMonth: "生まれ年月", annualReturnPct: "想定利回り", minCash: "最低限残しておきたい額",
+  frequency: "入れ方", month: "入れる月", amount: "1回の積立額", source: "お金の出どころ",
 };
 
 function isObject(value) {
@@ -201,6 +222,9 @@ function fieldIsValid(kind, value) {
   if (kind === "numberOrNull") return value === null || isNumber(value);
   if (kind === "text") return typeof value === "string" && value !== "";
   if (kind === "memo") return typeof value === "string";
+  if (kind === "frequency") return value === "monthly" || value === "yearly";
+  if (kind === "source") return value === "cash" || value === "gift";
+  if (kind === "monthOrNull") return value === null || (Number.isInteger(value) && value >= 1 && value <= 12);
   if (kind === "bonuses") {
     return Array.isArray(value) && value.every((bonus) =>
       isObject(bonus) && Number.isInteger(bonus.month) && bonus.month >= 1 && bonus.month <= 12 && isNumber(bonus.amount));
@@ -233,10 +257,15 @@ export function validateData(data) {
       if ("end" in rule.fields && (item.end === undefined || item.end === null)) item.end = "";
       if ("actual" in rule.fields && item.actual === undefined) item.actual = null;
       if ("target" in rule.fields && (item.target === undefined || item.target === null)) item.target = item.estimate;
+      if ("frequency" in rule.fields && item.frequency === undefined) item.frequency = "monthly";
+      if ("source" in rule.fields && item.source === undefined) item.source = "cash";
+      if ("month" in rule.fields && item.month === undefined) item.month = null;
 
       for (const [key, kind] of Object.entries(rule.fields)) {
         if (!fieldIsValid(kind, item[key])) fail(where, key);
       }
+      // 年1回の積立には、入れる月が必要
+      if (item.frequency === "yearly" && item.month === null) fail(where, "month");
     });
   }
 
